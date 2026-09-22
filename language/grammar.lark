@@ -1,0 +1,22 @@
+start: investigation
+
+investigation: "investigation" ESCAPED_STRING "{" statement* "}"
+
+?statement: collect_stmt 
+          | correlate_stmt 
+          | emit_stmt 
+          | detect_stmt
+
+collect_stmt: "collect" OPERATION ["as" CNAME]
+correlate_stmt: "correlate" CNAME ("," CNAME)*
+emit_stmt: "emit" EMIT_TARGET
+detect_stmt: "detect" "{" CNAME "SINCETRUE" CNAME "}" // Placeholder for PLTL
+
+OPERATION: "process_list" | "network_connections" | "file_metadata"
+EMIT_TARGET: "evidence" | "report" | "timeline"
+
+%import common.CNAME
+%import common.ESCAPED_STRING
+%import common.WS
+%ignore WS
+%ignore /#[^\n]*/  // Allow comments

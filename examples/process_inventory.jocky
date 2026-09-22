@@ -1,0 +1,6 @@
+investigation "Host Analysis" {
+    collect process_list as processes
+    collect network_connections as networks
+    correlate processes, networks
+    emit evidence
+}
