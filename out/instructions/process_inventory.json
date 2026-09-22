@@ -1,0 +1,30 @@
+{
+  "module": "Host Analysis",
+  "instructions": [
+    {
+      "type": "collect",
+      "operation": "process_list",
+      "capabilities": [
+        "ProcessRead"
+      ]
+    },
+    {
+      "type": "collect",
+      "operation": "network_connections",
+      "capabilities": [
+        "NetworkRead"
+      ]
+    },
+    {
+      "type": "correlate",
+      "inputs": [
+        "processes",
+        "networks"
+      ]
+    },
+    {
+      "type": "emit",
+      "target": "evidence"
+    }
+  ]
+}
