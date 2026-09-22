@@ -12,11 +12,11 @@ correlate_stmt: "correlate" CNAME ("," CNAME)*
 emit_stmt: "emit" EMIT_TARGET
 detect_stmt: "detect" "{" CNAME "SINCETRUE" CNAME "}" // Placeholder for PLTL
 
-OPERATION: "process_list" | "network_connections" | "file_metadata"
+OPERATION: "process_list" | "network_connections" | "file_metadata" | "memory_snapshot" | "driver_scan" | "kernel_callbacks" | "registry_hives" | "event_logs"
 EMIT_TARGET: "evidence" | "report" | "timeline"
 
 %import common.CNAME
 %import common.ESCAPED_STRING
 %import common.WS
 %ignore WS
-%ignore /#[^\n]*/  // Allow comments
+%ignore /#[^\n]*/
