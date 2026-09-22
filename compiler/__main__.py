@@ -1,9 +1,12 @@
 import argparse
 import sys
+from pathlib import Path
 from .parser import parse_source
 from .validator import SemanticValidator
 from .lower import lower_to_ir
 from .types import ValidationError
+from .lowering.passes import apply_passes
+from .lowering.lower import lower_to_json
 
 def print_ir(module):
     print(f"MODULE {module.name}\n")
@@ -24,6 +27,7 @@ def main():
     parser.add_argument("command", choices=["compile"])
     parser.add_argument("file", help="Path to .jocky source")
     parser.add_argument("--emit-ir", action="store_true", help="Print the generated IR")
+    parser.add_argument("--out", help="Output JSON path", default="out/instructions/payload.json")
     args = parser.parse_args()
 
     if args.command == "compile":
@@ -31,17 +35,21 @@ def main():
             with open(args.file, "r") as f:
                 source = f.read()
 
+            # Phase 1 & 2: Parse, Validate, Lower to IR
             ast = parse_source(source)
-            
             validator = SemanticValidator()
             validator.validate(ast)
-            
             ir_module = lower_to_ir(ast)
+            
+            # Phase 3: Optimize and lower to JSON contract
+            optimized_ir = apply_passes(ir_module)
 
             if args.emit_ir:
-                print_ir(ir_module)
+                print_ir(optimized_ir)
             else:
-                print("Compilation successful (AST -> VALID -> IR)")
+                out_path = Path(args.out)
+                lower_to_json(optimized_ir, out_path)
+                print(f"Lowered instruction contract written to {out_path}")
 
         except ValidationError as e:
             print(f"Validation Error: {e}")
