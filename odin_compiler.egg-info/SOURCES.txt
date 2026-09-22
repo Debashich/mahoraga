@@ -1,0 +1,6 @@
+pyproject.toml
+odin_compiler.egg-info/PKG-INFO
+odin_compiler.egg-info/SOURCES.txt
+odin_compiler.egg-info/dependency_links.txt
+odin_compiler.egg-info/requires.txt
+odin_compiler.egg-info/top_level.txt

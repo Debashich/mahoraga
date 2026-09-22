@@ -1,0 +1,14 @@
+[project]
+name = "odin-compiler"
+version = "0.1.0"
+description = "Compiler frontend for the Odin/JOCKY forensic DSL"
+dependencies = [
+    "lark>=1.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+[tool.setuptools]
+packages = ["compiler", "language"]

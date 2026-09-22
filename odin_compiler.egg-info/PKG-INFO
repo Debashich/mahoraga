@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: odin-compiler
+Version: 0.1.0
+Summary: Compiler frontend for the Odin/JOCKY forensic DSL
+Requires-Dist: lark>=1.1.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
