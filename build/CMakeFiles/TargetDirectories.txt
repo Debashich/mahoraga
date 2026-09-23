@@ -1,5 +1,0 @@
-/home/debashich/odin/build/CMakeFiles/odin-run.dir
-/home/debashich/odin/build/CMakeFiles/edit_cache.dir
-/home/debashich/odin/build/CMakeFiles/rebuild_cache.dir
-/home/debashich/odin/build/_deps/json-build/CMakeFiles/edit_cache.dir
-/home/debashich/odin/build/_deps/json-build/CMakeFiles/rebuild_cache.dir
