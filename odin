@@ -1,0 +1,40 @@
+#!/bin/bash
+set -e
+
+# Automatically use the virtual environment's python interpreter if it exists
+if [ -f ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
+else
+    PYTHON="python"
+fi
+
+if [ -z "$1" ]; then
+    echo "Usage: ./odin <script.jocky>"
+    exit 1
+fi
+
+SRC="$1"
+BASE_NAME=$(basename "$SRC" .jocky)
+INSTRUCTION_OUT="out/instructions/${BASE_NAME}.json"
+RAW_EVIDENCE="out/evidence/raw_evidence.json"
+SEALED_EVIDENCE="out/evidence/${BASE_NAME}_sealed.json"
+STIX_OUT="out/evidence/${BASE_NAME}_stix.json"
+
+echo "[1/4] Compiling $SRC to IR/Instructions..."
+$PYTHON -m compiler compile "$SRC" --out "$INSTRUCTION_OUT"
+
+echo "[2/4] Executing native C++ runtime..."
+./build/odin-run "$INSTRUCTION_OUT"
+
+echo "[3/4] Cryptographically sealing evidence..."
+$PYTHON -m evidence.sealing "$RAW_EVIDENCE" "$SEALED_EVIDENCE"
+
+echo "[4/4] Generating STIX 2.1 intelligence bundle..."
+$PYTHON -m detection.engine "$SEALED_EVIDENCE"
+if [ -f "out/evidence/report_stix.json" ]; then
+    mv "out/evidence/report_stix.json" "$STIX_OUT"
+fi
+
+echo "Investigation successfully completed!"
+echo "   -> Sealed Evidence: $SEALED_EVIDENCE"
+echo "   -> STIX Bundle:     $STIX_OUT"
