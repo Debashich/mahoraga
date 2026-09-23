@@ -1,0 +1,27 @@
+# Python Virtual Environments & Cache
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# CMake & C++ Build Artifacts
+build/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+*.cmake
+*.o
+*.a
+*.so
+
+# Odin / JOCKY Specific Outputs
+out/
+temp.jocky
+
+# IDEs & OS Files
+.vscode/
+.idea/
+*.swp
+.DS_Store

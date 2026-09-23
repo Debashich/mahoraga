@@ -1,7 +1,13 @@
 #include <iostream>
 #include <memory>
+
 #include "core/Runtime.hpp"
+
+#ifdef _WIN32
+#include "providers/windows/WindowsProvider.hpp"
+#else
 #include "providers/linux/LinuxProvider.hpp"
+#endif
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -10,11 +16,15 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        // Architecture specifies targeting specific Providers. Start with Linux.
+#ifdef _WIN32
+        auto provider = std::make_unique<WindowsProvider>();
+#else
         auto provider = std::make_unique<LinuxProvider>();
+#endif
+
         Runtime rt(std::move(provider));
-        
         rt.loadAndExecute(argv[1]);
+
     } catch (const std::exception& e) {
         std::cerr << "Runtime Error: " << e.what() << "\n";
         return 1;
