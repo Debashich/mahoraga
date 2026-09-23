@@ -1,0 +1,46 @@
+{
+  "type": "bundle",
+  "id": "bundle--e3cdbe9a-06f9-4375-9142-0d18fc73c030",
+  "objects": [
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--91a49fdf-74c4-4da5-a846-469c1ec3e73c",
+      "created": "2026-09-23T14:37:49.019558+00:00",
+      "name": "T1059_SuspiciousCommand",
+      "description": "Detected suspicious artifact: 462db376-30f7-42b6-89cc-ccb144577782",
+      "pattern_type": "jocky-canonical",
+      "pattern": "{'cmd': '/usr/lib/systemd/systemd-timesyncd\\x00', 'pid': '986'}"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--31ba819d-5e92-4c79-bd8f-375b1b5b14ab",
+      "created": "2026-09-23T14:37:49.019603+00:00",
+      "name": "T1059_SuspiciousCommand",
+      "description": "Detected suspicious artifact: a99decb4-a481-4f25-9358-0ccfb05d204b",
+      "pattern_type": "jocky-canonical",
+      "pattern": "{'cmd': '/usr/libexec/at-spi-bus-launcher\\x00', 'pid': '4848'}"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--99e2c684-ed02-41a1-adf4-1ec57911db8b",
+      "created": "2026-09-23T14:37:49.019619+00:00",
+      "name": "T1059_SuspiciousCommand",
+      "description": "Detected suspicious artifact: ec8da30c-4401-4ff1-9a57-a2b997c772ef",
+      "pattern_type": "jocky-canonical",
+      "pattern": "{'cmd': '/usr/bin/python3\\x00/usr/bin/ulauncher\\x00--hide-window\\x00--hide-window\\x00', 'pid': '5098'}"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--80ab4bb3-2466-4e50-a405-4d626dc88304",
+      "created": "2026-09-23T14:37:49.019633+00:00",
+      "name": "T1059_SuspiciousCommand",
+      "description": "Detected suspicious artifact: 2f80be8b-93d1-4481-87e4-d0d284df64c0",
+      "pattern_type": "jocky-canonical",
+      "pattern": "{'cmd': '/usr/bin/python3\\x00/home/debashich/.local/share/ulauncher/extensions/com.github.hillaryychan.ulauncher-fzf/main.py\\x00', 'pid': '5415'}"
+    }
+  ]
+}
