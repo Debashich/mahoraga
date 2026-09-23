@@ -4,7 +4,7 @@ import subprocess
 import uuid
 import os
 
-app = FastAPI(title="JOCKY Central Management Interface")
+app = FastAPI(title="Mahoraga CMI - Jocky DSL Engine")
 
 class InvestigationRequest(BaseModel):
     jocky_source: str

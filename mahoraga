@@ -9,7 +9,7 @@ else
 fi
 
 if [ -z "$1" ]; then
-    echo "Usage: ./odin <script.jocky>"
+    echo "Usage: ./mahoraga <script.jocky>"
     exit 1
 fi
 
@@ -24,7 +24,7 @@ echo "[1/4] Compiling $SRC to IR/Instructions..."
 $PYTHON -m compiler compile "$SRC" --out "$INSTRUCTION_OUT"
 
 echo "[2/4] Executing native C++ runtime..."
-./build/odin-run "$INSTRUCTION_OUT"
+./build/mahoraga-run "$INSTRUCTION_OUT"
 
 echo "[3/4] Cryptographically sealing evidence..."
 $PYTHON -m evidence.sealing "$RAW_EVIDENCE" "$SEALED_EVIDENCE"

@@ -1,0 +1,1 @@
+investigation "Terminal Test" { collect process_list as procs correlate procs emit evidence }
