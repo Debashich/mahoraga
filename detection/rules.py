@@ -1,11 +1,28 @@
-def rule_suspicious_process(artifact: dict) -> bool:
-    if artifact["type"] == "process_list":
-        cmd = artifact["data"].get("cmd", "").lower()
-        suspicious_keywords = ["nc", "nmap", "netcat", "curl", "wget"]
-        return any(kw in cmd for kw in suspicious_keywords)
-    return False
+def rule_suspicious_process(artifact):
+    data = artifact.get("data", {})
 
-# Simple registry of active rules
+    if not isinstance(data, dict):
+        return False
+
+    cmd = data.get("cmd", "")
+
+    if not isinstance(cmd, str):
+        return False
+
+    cmd = cmd.lower()
+
+    suspicious = [
+        "powershell",
+        "cmd.exe",
+        "whoami",
+        "mimikatz",
+        "nc ",
+        "netcat",
+    ]
+
+    return any(keyword in cmd for keyword in suspicious)
+
+
 ACTIVE_RULES = {
-    "T1059_SuspiciousCommand": rule_suspicious_process
+    "suspicious_process": rule_suspicious_process,
 }

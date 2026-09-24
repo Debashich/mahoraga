@@ -1,0 +1,9 @@
+investigation "Suspicious Host Sweep" {
+    collect system_info as host
+    collect users as sys_users
+    collect process_list as procs
+    collect network_connections as conns
+    collect auth_logs as auth
+    correlate procs
+    emit evidence
+}
