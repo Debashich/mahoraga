@@ -1,0 +1,6 @@
+investigation "Relational Cross-Reference" {
+    collect process_list as procs
+    collect network_connections as conns
+    correlate procs with conns
+    emit evidence
+}

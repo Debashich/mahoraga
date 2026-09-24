@@ -11,8 +11,9 @@ class Collect(Node):
     alias: Optional[str]
 
 @dataclass
-class Correlate(Node):
-    aliases: List[str]
+class Correlate:
+    source: str
+    target: str
 
 @dataclass
 class Emit(Node):

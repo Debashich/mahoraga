@@ -28,7 +28,10 @@ def lower_odin_to_mlir(ir_module: OdinModule) -> MLIRModule:
         elif op_type == "CorrelateOp":
             mlir.body.append(MLIROp(
                 name="forensic.correlate",
-                attributes={"inputs": op.input_vars},
+                attributes={
+                    "source": op.source,
+                    "target": op.target,
+                },
                 results=["correlated_bundle"]
             ))
         elif op_type == "SealEvidenceOp":

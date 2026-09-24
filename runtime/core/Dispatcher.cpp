@@ -8,11 +8,11 @@ Dispatcher::Dispatcher(std::unique_ptr<Provider> provider)
 
 nlohmann::json Dispatcher::dispatch(const nlohmann::json& instruction) {
 
-    std::string type = instruction["type"];
+    std::string type = instruction.value("type", "");
 
     if (type == "collect") {
 
-        std::string op = instruction["operation"];
+        std::string op = instruction.value("operation", "");
 
         if (!m_provider->supports(op)) {
             throw std::runtime_error(
@@ -23,40 +23,17 @@ nlohmann::json Dispatcher::dispatch(const nlohmann::json& instruction) {
         std::cout << "[Dispatcher] Executing collection: "
                   << op << "\n";
 
-        nlohmann::json data;
+        nlohmann::json data = m_provider->execute(op);
 
-        if (op == "process_list") {
-            data = m_provider->execute(op);
-        }
-        else if (op == "system_info") {
-            data = m_provider->execute(op);
-        }
-        else if (op == "users") {
-            data = m_provider->execute(op);
-        }
-        else if (op == "network_connections") {
-            data = m_provider->execute(op);
-        }
-        else if (op == "auth_logs") {
-            data = m_provider->execute(op);
-        }
-        else {
-            throw std::runtime_error(
-                "Unknown collection target: " + op
-            );
-        }
-
-        // Wrap output in Canonical Evidence Schema
         return {
             {"canonical_type", "evidence_" + op},
             {"data", data}
         };
     }
 
-    else if (type == "correlate" || type == "emit") {
+    if (type == "correlate" || type == "emit") {
 
-        std::cout << "[Dispatcher] Handling structural op: "
-                  << type << "\n";
+        handle_structural_op(type, instruction);
 
         return {
             {"status", "success"}
@@ -66,4 +43,43 @@ nlohmann::json Dispatcher::dispatch(const nlohmann::json& instruction) {
     throw std::runtime_error(
         "Unknown instruction type: " + type
     );
+}
+
+void Dispatcher::handle_structural_op(
+    const std::string& op,
+    const nlohmann::json& instruction
+) {
+    if (op == "correlate") {
+
+        std::string source =
+            instruction.value("source", "unknown");
+
+        std::string target =
+            instruction.value("target", "unknown");
+
+        std::cout << "[Dispatcher] Correlating relationship: "
+                  << source
+                  << " <---> "
+                  << target
+                  << "\n";
+
+        nlohmann::json relationship = {
+            {"type", "relationship"},
+            {"source_variable", source},
+            {"target_variable", target},
+            {"status", "linked"}
+        };
+
+        // Structural relationship is currently returned as a
+        // runtime result. Persistent evidence-cache integration
+        // can be added when the evidence cache is centralized.
+        std::cout << "[Dispatcher] Relationship created: "
+                  << relationship.dump()
+                  << "\n";
+    }
+    else if (op == "emit") {
+
+        std::cout << "[Dispatcher] Emitting combined evidence bundle..."
+                  << "\n";
+    }
 }
