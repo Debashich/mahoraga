@@ -1,0 +1,5 @@
+investigation "Quick Host Check" {
+    collect system_info as system
+    collect process_list as procs
+    emit evidence
+}
