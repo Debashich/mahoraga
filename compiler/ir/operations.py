@@ -15,7 +15,8 @@ class CollectOp(IROp):
 
 @dataclass
 class CorrelateOp(IROp):
-    input_vars: List[str]
+    source: str
+    target: str
 
 @dataclass
 class SealEvidenceOp(IROp):

@@ -8,7 +8,7 @@ investigation: "investigation" ESCAPED_STRING "{" statement* "}"
           | detect_stmt
 
 collect_stmt: "collect" OPERATION ["as" CNAME]
-correlate_stmt: "correlate" CNAME ("," CNAME)*
+correlate_stmt: "correlate" CNAME "with" CNAME
 emit_stmt: "emit" EMIT_TARGET
 detect_stmt: "detect" "{" CNAME "SINCETRUE" CNAME "}" // Placeholder for PLTL
 

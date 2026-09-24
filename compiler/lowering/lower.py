@@ -23,7 +23,7 @@ def lower_to_json(ir_module: MLIRModule, output_path: Path):
             instructions.append(
                 {
                     "type": "correlate",
-                    "inputs": op.input_vars,
+                    "source": op.source,"target": op.target,
                 }
             )
 
