@@ -1,150 +1,377 @@
 # Mahoraga Setup & Contributor Guide
 
-Mahoraga is a cross-platform, Orchestration-as-a-Service (OaaS) forensic compiler framework designed to systematically analyze malicious activities without triggering endpoint security solutions. It utilizes a custom domain-specific language (Jocky), lowers it into a language-independent intermediate representation (Forensic IR), and executes data collection natively via a C++ engine to bypass behavioral EDR heuristics.
+Mahoraga is a cross-platform forensic compiler and orchestration framework built around a custom domain-specific language (Jocky). It compiles forensic instructions into a language-independent Forensic IR, executes them through native C++ providers, preserves collected evidence through cryptographic sealing, and produces standardized STIX 2.1 threat-intelligence output.
 
 ## Architecture Overview
 
-The pipeline consists of four distinct trust boundaries:
+The Mahoraga pipeline consists of four primary stages:
 
-1. **Compiler (Python):** Lexes and parses the Jocky DSL into an Abstract Syntax Tree (AST), validates relational semantics, and lowers it into a JSON Instruction Contract (Forensic IR).
-2. **Native Provider (C++):** Executes the IR natively. Parses system files (`/proc`, etc.) and memory directly without spawning noisy child processes (like `netstat` or `cat`).
-3. **Evidence Sealing (Python):** Cryptographically hashes and seals the collected evidence into an immutable chain of custody.
-4. **Threat Intelligence Engine (Python):** Correlates findings and generates a standard STIX 2.1 intelligence bundle.
+1. **Compiler (Python):** Lexes and parses the Jocky DSL into an Abstract Syntax Tree (AST), validates semantics, and lowers the program into a JSON Instruction Contract (Forensic IR).
+
+2. **Payload Encapsulation & Native Runtime (Python + C++):** The generated IR is transformed into an encrypted binary payload before execution. The native C++ runtime reads the payload, extracts its per-payload key material, decrypts the IR in memory, parses the resulting instruction contract, and dispatches execution to the appropriate native provider.
+
+3. **Evidence Sealing (Python):** Collected evidence is cryptographically hashed and sealed into an integrity-preserving evidence bundle suitable for maintaining chain-of-custody information.
+
+4. **Threat Intelligence Engine (Python):** Processes the resulting evidence and generates a standardized STIX 2.1 intelligence bundle.
+
+### Execution Flow
+
+```text
+Jocky Source
+     │
+     ▼
+Python Compiler
+     │
+     ▼
+Forensic IR (.json)
+     │
+     ▼
+Payload Obfuscator
+     │
+     ▼
+Encrypted Payload (.enc)
+     │
+     ▼
+Native C++ Runtime
+     │
+     ├── Read encrypted payload
+     ├── Extract key material
+     ├── Decrypt IR in memory
+     ├── Parse Instruction Contract
+     └── Dispatch to native provider
+              │
+              ▼
+        Raw Evidence
+              │
+              ▼
+       Evidence Sealing
+              │
+              ▼
+       STIX 2.1 Bundle
+```
+
+The plaintext IR remains available as a compiler artifact for downstream analysis and detection processing, while the native execution path consumes the encrypted payload.
 
 ## Prerequisites
 
 Ensure your development environment has the following installed:
 
-* **Python:** 3.12+ (for the compiler, evidence sealing, and detection engine).
-* **C++ Compiler:** GCC or Clang with C++17 support.
-* **CMake:** Version 3.14 or higher.
-* **Make:** Standard GNU Make.
+- **Python:** 3.12+
+- **C++ Compiler:** GCC or Clang with C++17 support
+- **CMake:** 3.14+
+- **Make:** GNU Make
+- **Git:** Required for repository development
 
 ## 1. Environment Setup
 
-Clone the repository and set up your Python virtual environment.
+Clone the repository and create a Python virtual environment.
 
 ```bash
-# Navigate to your workspace and clone the repository
 git clone <repository-url> mahoraga
 cd mahoraga
 
-# Create and activate a Python virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
-
 ```
 
 ## 2. Python Dependencies
 
-Install the required packages for the parser, threat-hunting engine, and the visual Workbench UI.
+Install the dependencies required by the compiler, detection engine, evidence pipeline, and Workbench UI.
 
 ```bash
-# Install core dependencies and UI libraries
 pip install lark streamlit streamlit-ace
-
 ```
+
+If additional dependencies are introduced by individual modules, install them according to the corresponding module documentation.
 
 ## 3. Building the C++ Runtime
 
-The C++ engine (`mahoraga-run`) requires a clean CMake build. It automatically fetches `nlohmann_json` during configuration.
+The native runtime is built through CMake.
 
 ```bash
-# Create the build directory
-mkdir build
+mkdir -p build
 cd build
 
-# Generate build configurations and compile
 cmake ..
 make
 
-# Return to the project root
 cd ..
-
 ```
 
-*Verify the build:* Ensure the executable `mahoraga-run` exists inside the `build/` directory.
+The build should produce:
+
+```text
+build/mahoraga-run
+```
+
+The CMake configuration is responsible for making the required C++ JSON dependency available to the runtime.
 
 ## Project Structure
 
 ```text
 mahoraga/
-├── build/               # Compiled C++ binaries (mahoraga-run)
-├── compiler/            # Python Jocky parser (Lark grammar & AST transformers)
-├── detection/           # Threat hunting engine (STIX 2.1 generator)
-├── evidence/            # Cryptographic sealing and hashing logic
-├── examples/            # Canonical .jocky scripts and test cases
-├── out/                 # Pipeline output (Instructions, Raw Evidence, Sealed, STIX)
-├── runtime/             # C++ Source Code
-│   ├── core/            # Dispatcher and IR parsers
-│   └── providers/       # Native execution endpoints (LinuxProvider.cpp)
-├── workbench.py         # Streamlit UI (Central Management Interface)
-└── mahoraga             # Bash executable wrapper for the CLI pipeline
-
+├── build/                       # Compiled native runtime (generated)
+│   └── mahoraga-run
+│
+├── cmi/                         # Central Management Interface backend
+│   └── server.py
+│
+├── compiler/                    # Jocky compiler and Forensic IR
+│   ├── ast.py                   # AST definitions
+│   ├── capabilities.py          # Capability definitions
+│   ├── parser.py                # Parser / AST generation
+│   ├── types.py                 # Compiler types
+│   ├── validator.py             # Semantic validation
+│   ├── lower.py                 # IR lowering
+│   ├── obfuscator.py            # Encrypted payload generation
+│   │
+│   ├── ir/                      # Forensic IR
+│   │   ├── module.py
+│   │   ├── operations.py
+│   │   └── types.py
+│   │
+│   ├── lowering/                # IR lowering passes
+│   │   ├── lower.py
+│   │   └── passes.py
+│   │
+│   └── mlir/                    # MLIR representation and passes
+│       ├── dialect.py
+│       └── passes.py
+│
+├── detection/                   # Threat hunting / STIX engine
+│   ├── engine.py
+│   ├── pltl.py
+│   ├── rules.py
+│   └── stix.py
+│
+├── evidence/                    # Evidence hashing and sealing
+│   ├── hashing.py
+│   ├── schema.py
+│   └── sealing.py
+│
+├── examples/                    # Jocky programs and test cases
+│
+├── language/                    # Jocky language definition
+│   └── grammar.lark
+│
+├── runtime/                     # Native C++ runtime
+│   ├── core/
+│   │   ├── Dispatcher.cpp
+│   │   ├── Dispatcher.hpp
+│   │   ├── Runtime.cpp
+│   │   └── Runtime.hpp
+│   │
+│   ├── main.cpp
+│   │
+│   └── providers/
+│       ├── common/
+│       │   └── Provider.hpp
+│       ├── linux/
+│       │   ├── LinuxProvider.cpp
+│       │   └── LinuxProvider.hpp
+│       └── windows/
+│           ├── WindowsProvider.cpp
+│           └── WindowsProvider.hpp
+│
+├── tests/                       # Compiler / validator tests
+│   ├── test_parser.py
+│   └── test_validator.py
+│
+├── tools/                       # Development / verification tools
+│   └── verify_seal.py
+│
+├── out/                         # Generated pipeline artifacts (ignored)
+├── build/                       # Generated native build (ignored)
+│
+├── CMakeLists.txt               # Native build configuration
+├── mahoraga                     # CLI pipeline wrapper
+├── workbench.py                 # Streamlit Workbench UI
+├── pyproject.toml               # Python project configuration
+├── package.json                 # Node/project tooling metadata
+├── package-lock.json
+├── uv.lock
+├── .gitignore
+└── README.md
 ```
 
 ## Running Mahoraga
 
-### CLI Mode (Headless)
+### CLI Mode
 
-To run a forensic investigation directly from the terminal, use the bash wrapper script. This will push the investigation through all four pipeline stages and write the output to the `out/` directory.
+The `mahoraga` wrapper executes the complete investigation pipeline.
 
 ```bash
 ./mahoraga examples/test.jocky
-
 ```
 
-### Workbench UI (Central Management Interface)
+The execution pipeline is:
 
-To launch the Orchestration-as-a-Service (OaaS) dashboard, run the Streamlit application. This provides a visual pipeline inspector, a live code editor, and the ability to package investigations for deployment.
+```text
+[1/4] Compile Jocky → Forensic IR
+      ↓
+      Encrypt / encapsulate IR
+      ↓
+      Generate .enc payload
+
+[2/4] Execute encrypted payload
+      ↓
+      Native C++ runtime
+      ↓
+      In-memory IR decryption
+      ↓
+      Native provider execution
+
+[3/4] Cryptographically seal evidence
+
+[4/4] Generate STIX 2.1 bundle
+```
+
+Generated artifacts are written under:
+
+```text
+out/
+├── instructions/
+│   ├── <name>.json
+│   └── <name>.enc
+│
+└── evidence/
+    ├── raw_evidence.json
+    ├── <name>_sealed.json
+    └── <name>_stix.json
+```
+
+### Workbench UI
+
+Launch the Central Management Interface with:
 
 ```bash
 streamlit run workbench.py
-
 ```
 
-The interface will automatically open in your default browser at `http://localhost:8501`.
+The interface is available locally at:
+
+```text
+http://localhost:8501
+```
+
+The Workbench provides a visual interface for authoring and inspecting Jocky investigations and interacting with the Mahoraga pipeline.
 
 ## Current Roadmap & Next Steps
 
-We are currently transitioning from foundational system engineering to active threat hunting and C2 evasion.
+The core Mahoraga architecture and Phases 1–14 are complete. The remaining development is focused on remote evidence transport, cross-platform native execution, and the final standard library and demonstration.
 
-* **Completed:** Core Compiler, C++ Linux Provider, Relational Semantics, and the Workbench UI.
-* **Phase 13 (Active):** Building the `detect` block into the Jocky DSL and Python engine for threshold-based threat hunting.
-* **Phase 14:** Implementing Polymorphic IR (AES-256 encryption between the compiler and C++ engine).
-* **Phase 15:** Cloud API C2 Routing (transmitting evidence via trusted CDNs/APIs).
-* **Phase 16:** Developing the Windows native provider using Win32 APIs.
-* **Phase 17:** Standard Library & Master Demonstration
+### Phase 15 — Remote Evidence Transport
 
-### Phase 13: Threat Hunting & Detection Engine
+**Status: Remaining**
 
-* **Objective:** Transform Jocky from a static collection tool into an active analytics framework.
-* **Compiler Updates:** Modify `compiler/grammar.lark` and `compiler/parser.py` to support a new `detect` block (e.g., `detect brute_force { source = auth; threshold = 5 }`). The compiler will lower this logic into the Forensic IR.
-* **Analysis Logic:** Expand `detection/engine.py` to intercept the `detect` instructions. It will cross-reference the required thresholds against the collected evidence (like `auth_logs` parsing) and inject formal STIX 2.1 `indicator` objects into the intelligence bundle when conditions are met.
+Extend Mahoraga with controlled remote evidence transport and orchestration.
 
-### Phase 14: Polymorphic IR & Payload Encapsulation
+Planned work:
 
-* **Objective:** Satisfy the polymorphism and obfuscation requirement to bypass static EDR signatures.
-* **Compiler Encryption:** Update the Python compiler to apply AES-256 encryption to the intermediate JSON representation, generating a unique, randomized initialization vector (IV) per compilation. This ensures the output artifact is cryptographically distinct on every run.
-* **In-Memory Decryption:** Modify the C++ `mahoraga-run` entry point to accept the ciphertext and the key, decrypting the forensic instruction contract entirely in memory before passing it to the Dispatcher.
+- Define a Jocky-level evidence transport abstraction.
+- Add authenticated remote transport.
+- Support configurable HTTP/API backends.
+- Extend the Workbench for remote investigation orchestration.
+- Preserve evidence integrity during transport.
 
-### Phase 15: Cloud API C2 Routing
+### Phase 16 — Cross-Platform Native Providers
 
-* **Objective:** Route framework traffic through legitimate CDNs or trusted cloud APIs to evade behavioral network blocks.
-* **Language Addition:** Introduce a `transmit evidence via "github_gist"` (or alternative legitimate API) statement to the Jocky AST.
-* **Native Network Layer:** Implement an HTTP client in the C++ runtime (using `libcurl` or native OS libraries) to POST the encrypted evidence bundle to the designated trusted domain instead of writing to a local `out/` directory.
-* **UI Orchestration:** Update the Streamlit `workbench.py` to act as a true remote Central Management Interface. It will poll the designated Cloud API to retrieve, decrypt, and display the completed investigation results.
+**Status: Remaining**
 
-### Phase 16: Cross-Platform Native Providers
+Extend native execution beyond the current Linux provider.
 
-* **Objective:** Fulfill the explicit Windows and Ubuntu compatibility mandate.
-* **Win32 Implementation:** Create `runtime/providers/windows/WindowsProvider.cpp`. This will execute silent data harvesting using Win32 APIs (e.g., `CreateToolhelp32Snapshot` for process listing, `GetExtendedTcpTable` for network sockets) to bypass behavioral monitoring of standard shell commands.
-* **Build System:** Update `CMakeLists.txt` to conditionally link the correct OS provider during compilation. Update the Streamlit UI to unlock the Windows build target.
+Planned work:
 
-### Phase 17: Standard Library & Master Demonstration
+- Implement the Windows native provider.
+- Add Windows-specific system and network collection capabilities.
+- Maintain the same provider interface across operating systems.
+- Update CMake for platform-specific compilation.
+- Add Windows integration tests.
 
-* **Objective:** Deliver the requested "various scripts/functions" and finalize the hackathon presentation.
-* **Authoring the Library:** Write the canonical Jocky templates to prove the architecture:
-* `stealth_host_sweep.jocky`: Broad, silent system profiling.
-* `brute_force_hunt.jocky`: Auth log parsing and threshold detection.
-* `lateral_movement_trace.jocky`: Complex relational mapping between active users and network connections.
+Target architecture:
+
+```text
+                 Forensic IR
+                     │
+                 Dispatcher
+                /         \
+               ▼           ▼
+        LinuxProvider   WindowsProvider
+             │               │
+             ▼               ▼
+       Linux APIs       Windows APIs
+```
+
+### Phase 17 — Standard Library & Master Demonstration
+
+**Status: Remaining**
+
+Deliver the canonical Jocky standard-library examples and final end-to-end demonstration.
+
+Planned examples:
+
+```text
+examples/
+├── stealth_host_sweep.jocky
+├── brute_force_hunt.jocky
+└── lateral_movement_trace.jocky
+```
+
+The final demonstration will showcase:
+
+- Jocky authoring
+- Platform-independent Forensic IR
+- Encrypted payload generation
+- Native runtime execution
+- Evidence collection
+- Evidence sealing
+- Threat detection
+- STIX 2.1 generation
+- Cross-platform provider architecture
+
+## Contributor Workflow
+
+Before submitting changes:
+
+```bash
+# Activate environment
+source .venv/bin/activate
+
+# Rebuild native runtime
+cd build
+make
+cd ..
+
+# Run an example investigation
+./mahoraga examples/test.jocky
+```
+
+When modifying the compiler, verify that:
+
+```text
+Jocky source
+    ↓
+AST
+    ↓
+Forensic IR
+    ↓
+Encrypted payload
+    ↓
+Native runtime
+```
+
+continues to function correctly.
+
+When modifying native providers, verify that the same Forensic IR contract can still be dispatched without changing the compiler's platform-independent representation.
+
+## Design Principles
+
+Mahoraga is built around several core architectural principles:
+
+- **Language-independent IR:** The compiler should not encode platform-specific execution logic into the DSL.
+- **Native execution:** Providers should use native operating-system interfaces where practical.
+- **Provider abstraction:** Platform-specific collection logic belongs behind a common provider interface.
+- **Evidence integrity:** Collected artifacts should remain verifiable throughout the investigation pipeline.
+- **Separation of concerns:** Compilation, execution, evidence handling, and threat intelligence remain separate pipeline stages.
+- **Cross-platform architecture:** The same Jocky program should target different native providers through the shared Forensic IR.
+- **Reproducible development:** Compiler and runtime changes should be testable independently before being exercised through the complete pipeline.
