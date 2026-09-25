@@ -1,7 +1,8 @@
 #!/bin/bash
+
 set -e
 
-# Automatically use the virtual environment's python interpreter if it exists
+# Automatically use the virtual environment's Python interpreter if it exists
 if [ -f ".venv/bin/python" ]; then
     PYTHON=".venv/bin/python"
 else
@@ -14,24 +15,55 @@ if [ -z "$1" ]; then
 fi
 
 SRC="$1"
+
 BASE_NAME=$(basename "$SRC" .jocky)
+
 INSTRUCTION_OUT="out/instructions/${BASE_NAME}.json"
+ENCRYPTED_OUT="out/instructions/${BASE_NAME}.enc"
+
 RAW_EVIDENCE="out/evidence/raw_evidence.json"
 SEALED_EVIDENCE="out/evidence/${BASE_NAME}_sealed.json"
 STIX_OUT="out/evidence/${BASE_NAME}_stix.json"
 
+
 echo "[1/4] Compiling $SRC to IR/Instructions..."
-$PYTHON -m compiler compile "$SRC" --out "$INSTRUCTION_OUT"
+
+$PYTHON -m compiler compile \
+    "$SRC" \
+    --out "$INSTRUCTION_OUT"
+
+echo "      -> Plain IR: $INSTRUCTION_OUT"
+
+echo "      -> Polymorphic encryption..."
+
+$PYTHON -m compiler.obfuscator \
+    "$INSTRUCTION_OUT" \
+    "$ENCRYPTED_OUT"
+
+echo "      -> Encrypted payload: $ENCRYPTED_OUT"
+
 
 echo "[2/4] Executing native C++ runtime..."
-./build/mahoraga-run "$INSTRUCTION_OUT"
+
+./build/mahoraga-run "$ENCRYPTED_OUT"
+
 
 echo "[3/4] Cryptographically sealing evidence..."
-$PYTHON -m evidence.sealing "$RAW_EVIDENCE" "$SEALED_EVIDENCE"
+
+$PYTHON -m evidence.sealing \
+    "$RAW_EVIDENCE" \
+    "$SEALED_EVIDENCE"
+
 
 echo "[4/4] Generating STIX 2.1 intelligence bundle..."
-$PYTHON -m detection.engine "$INSTRUCTION_OUT" "$SEALED_EVIDENCE" "$STIX_OUT"
 
+$PYTHON -m detection.engine \
+    "$INSTRUCTION_OUT" \
+    "$SEALED_EVIDENCE" \
+    "$STIX_OUT"
+
+
+echo
 echo "Investigation successfully completed!"
 echo "   -> Sealed Evidence: $SEALED_EVIDENCE"
 echo "   -> STIX Bundle:     $STIX_OUT"
