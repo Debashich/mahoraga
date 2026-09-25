@@ -44,10 +44,22 @@ class OdinTransformer(Transformer):
         )
 
     def detect_stmt(self, items):
+        rule_name = str(items[0])
+        params = {}
+
+        for assign in items[1:]:
+            params.update(assign)
+
         return Detect(
-            condition_a=str(items[0]),
-            condition_b=str(items[1])
+            rule_name=rule_name,
+            params=params
         )
+
+    def assignment(self, items):
+    # items[0] is the key, items[1] is the value
+        key = str(items[0])
+        value = str(items[1]).strip('"')
+        return {key: value} 
 
 
 def parse_source(source_text: str) -> Investigation:

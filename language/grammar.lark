@@ -10,7 +10,6 @@ investigation: "investigation" ESCAPED_STRING "{" statement* "}"
 collect_stmt: "collect" OPERATION ["as" CNAME]
 correlate_stmt: "correlate" CNAME "with" CNAME
 emit_stmt: "emit" EMIT_TARGET
-detect_stmt: "detect" "{" CNAME "SINCETRUE" CNAME "}" // Placeholder for PLTL
 
 OPERATION: "process_list"
          | "system_info"
@@ -33,7 +32,11 @@ capability: "process_list"
 EMIT_TARGET: "evidence" | "report" | "timeline"
 
 %import common.CNAME
+%import common.NUMBER
 %import common.ESCAPED_STRING
 %import common.WS
 %ignore WS
 %ignore /#[^\n]*/
+
+detect_stmt: "detect" CNAME "{" assignment+ "}"
+assignment: CNAME "=" (CNAME | NUMBER | ESCAPED_STRING)

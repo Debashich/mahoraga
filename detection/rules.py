@@ -1,28 +1,49 @@
-def rule_suspicious_process(artifact):
+def rule_brute_force(artifact, params):
+    if artifact.get("type") != "auth_logs":
+        return False
+
     data = artifact.get("data", {})
 
     if not isinstance(data, dict):
         return False
 
-    cmd = data.get("cmd", "")
+    logs = data.get("logs", [])
 
-    if not isinstance(cmd, str):
+    if not isinstance(logs, list):
         return False
 
-    cmd = cmd.lower()
+    try:
+        threshold = int(params.get("threshold", 5))
+    except (TypeError, ValueError):
+        threshold = 5
 
-    suspicious = [
-        "powershell",
-        "cmd.exe",
-        "whoami",
-        "mimikatz",
-        "nc ",
-        "netcat",
-    ]
+    failed_attempts = 0
 
-    return any(keyword in cmd for keyword in suspicious)
+    failure_markers = (
+        "authentication failure",
+        "failed password",
+        "authentication failed",
+        "failed login",
+        "invalid user",
+    )
+
+    for entry in logs:
+        if not isinstance(entry, dict):
+            continue
+
+        raw = entry.get("raw", "")
+
+        if not isinstance(raw, str):
+            continue
+
+        raw_lower = raw.lower()
+
+        if any(marker in raw_lower for marker in failure_markers):
+            failed_attempts += 1
+
+    return failed_attempts >= threshold
 
 
 ACTIVE_RULES = {
-    "suspicious_process": rule_suspicious_process,
+    "brute_force": rule_brute_force,
 }
