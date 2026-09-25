@@ -30,10 +30,7 @@ echo "[3/4] Cryptographically sealing evidence..."
 $PYTHON -m evidence.sealing "$RAW_EVIDENCE" "$SEALED_EVIDENCE"
 
 echo "[4/4] Generating STIX 2.1 intelligence bundle..."
-$PYTHON -m detection.engine "$SEALED_EVIDENCE"
-if [ -f "out/evidence/report_stix.json" ]; then
-    mv "out/evidence/report_stix.json" "$STIX_OUT"
-fi
+$PYTHON -m detection.engine "$INSTRUCTION_OUT" "$SEALED_EVIDENCE" "$STIX_OUT"
 
 echo "Investigation successfully completed!"
 echo "   -> Sealed Evidence: $SEALED_EVIDENCE"

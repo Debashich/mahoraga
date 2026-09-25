@@ -21,8 +21,8 @@ class Emit(Node):
 
 @dataclass
 class Detect(Node):
-    condition_a: str
-    condition_b: str
+    rule_name: str
+    params: dict
 
 @dataclass
 class Investigation(Node):

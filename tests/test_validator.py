@@ -8,7 +8,7 @@ def test_undefined_reference():
     source = """
     investigation "Test" {
         collect process_list as procs
-        correlate procs, missing_var
+        correlate procs with missing_var
     }
     """
     ast = parse_source(source)
@@ -32,7 +32,8 @@ def test_valid_flow():
     source = """
     investigation "Host Analysis" {
         collect process_list as processes
-        correlate processes
+        collect network_connections as networks
+        correlate processes with networks
     }
     """
     ast = parse_source(source)

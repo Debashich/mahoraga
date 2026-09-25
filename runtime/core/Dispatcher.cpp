@@ -31,7 +31,7 @@ nlohmann::json Dispatcher::dispatch(const nlohmann::json& instruction) {
         };
     }
 
-    if (type == "correlate" || type == "emit") {
+    if (type == "correlate" || type == "emit" || type == "detect") {
 
         handle_structural_op(type, instruction);
 
@@ -76,10 +76,25 @@ void Dispatcher::handle_structural_op(
         std::cout << "[Dispatcher] Relationship created: "
                   << relationship.dump()
                   << "\n";
-    }
-    else if (op == "emit") {
+
+    } else if (op == "emit") {
 
         std::cout << "[Dispatcher] Emitting combined evidence bundle..."
                   << "\n";
+
+    } else if (op == "detect") {
+
+        // Detection is handled post-execution by the Python
+        // analysis engine. The C++ runtime only registers/logs it.
+        std::cout << "[Dispatcher] Registering detection rule: "
+                  << instruction.value("rule", "unknown")
+                  << " (Delegated to Analysis Engine)"
+                  << std::endl;
+
+    } else {
+
+        std::cerr << "[Error] Unknown structural op: "
+                  << op
+                  << std::endl;
     }
 }

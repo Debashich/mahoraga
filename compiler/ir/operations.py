@@ -25,3 +25,8 @@ class SealEvidenceOp(IROp):
 @dataclass
 class EmitReportOp(IROp):
     target: str
+
+@dataclass
+class DetectOp(IROp):
+    rule_name: str
+    params: dict

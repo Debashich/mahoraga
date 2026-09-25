@@ -1,6 +1,12 @@
-from .ast import Investigation, Collect, Correlate, Emit
+from .ast import Investigation, Collect, Correlate, Emit, Detect
 from .ir.module import Module
-from .ir.operations import CollectOp, CorrelateOp, SealEvidenceOp, EmitReportOp
+from .ir.operations import (
+    CollectOp,
+    CorrelateOp,
+    SealEvidenceOp,
+    EmitReportOp,
+    DetectOp,
+)
 
 def lower_to_ir(ast: Investigation) -> Module:
     ops = []
@@ -14,5 +20,11 @@ def lower_to_ir(ast: Investigation) -> Module:
             ops.append(SealEvidenceOp()) 
         elif stmt_type == "Emit":
             ops.append(EmitReportOp(target=stmt.target))
-            
-    return Module(name=ast.name, operations=ops)
+        elif stmt_type == "Detect":
+            ops.append(
+                DetectOp(
+                    rule_name=stmt.rule_name,
+                    params=stmt.params,
+                )
+            )
+    return Module(name=ast.name, operations=ops)    

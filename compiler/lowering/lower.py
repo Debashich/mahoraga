@@ -26,7 +26,14 @@ def lower_to_json(ir_module: MLIRModule, output_path: Path):
                     "source": op.source,"target": op.target,
                 }
             )
-
+        elif op_type == "DetectOp":
+            instructions.append(
+                {
+                    "type": "detect",
+                    "rule": op.rule_name,
+                    "params": op.params,
+                }
+            )
         elif op_type == "EmitReportOp":
             instructions.append(
                 {
