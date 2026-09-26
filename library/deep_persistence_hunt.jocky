@@ -1,0 +1,22 @@
+investigation "Deep Persistence Hunt" (
+    author = "Mahoraga Stdlib",
+    mitre_tactic = "TA0003"
+) {
+    collect registry_hives as registry
+    collect wmi_subscriptions as wmi
+    collect scheduled_tasks as tasks
+    
+    detect wmi_consumer_hijack {
+        source = wmi
+        threshold = 1
+        condition = "consumer_type == 'CommandLineEventConsumer' AND payload CONTAINS 'powershell'"
+    }
+
+    detect phantom_dll_load {
+        source = registry
+        threshold = 1
+        condition = "key == 'AppInit_DLLs' OR key CONTAINS 'Image File Execution Options'"
+    }
+
+    emit evidence
+}

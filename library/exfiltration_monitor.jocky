@@ -1,0 +1,27 @@
+investigation "Active Exfiltration Monitor" (
+    author = "Mahoraga Stdlib",
+    mitre_tactic = "TA0010"
+) {
+    // Route our own forensic traffic securely so the adversary doesn't see us
+    route through socks5 "192.168.1.100:1080"
+
+    collect process_list as procs
+    collect network_connections as net
+    collect file_metadata as files
+    
+    correlate procs, net, files
+    
+    detect anomalous_outbound_volume {
+        source = net
+        threshold = 500MB
+        condition = "direction == 'outbound' AND process NOT IN std::whitelist::browsers"
+    }
+
+    detect staging_archives {
+        source = files
+        threshold = 1
+        condition = "extension IN ['.rar', '.zip', '.7z'] AND path == 'C:\\ProgramData'"
+    }
+
+    emit report
+}

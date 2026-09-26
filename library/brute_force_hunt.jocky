@@ -1,0 +1,14 @@
+investigation "Brute Force Hunt" (
+    author = "Mahoraga Stdlib",
+    mitre_tactic = "TA0011",
+    mitre_technique = "T1110"
+) {
+    collect auth_logs as auth
+    
+    detect brute_force {
+        source = auth
+        threshold = 5
+    }
+    
+    emit evidence
+}
