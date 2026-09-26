@@ -1,0 +1,30 @@
+investigation "Host Baseline & Triage" (
+    author = "Mahoraga Stdlib",
+    mitre_tactic = "TA0007"
+) {
+    // 1. Silent Acquisition via Native Providers
+    collect system_info as sys
+    collect process_list as procs
+    collect network_connections as sockets
+    collect users as accounts
+    
+    // 2. Relational Mapping (The Graph Engine)
+    correlate procs, sockets, accounts
+    
+    // 3. Automated Anomaly Detection
+    detect unsigned_execution {
+        source = procs
+        threshold = 1
+        condition = "signature == null AND path != 'C:\\Windows\\System32'"
+    }
+
+    detect strange_parent_child {
+        source = procs
+        threshold = 1
+        condition = "parent == 'winword.exe' AND child == 'cmd.exe'"
+    }
+    
+    // 4. Output Generation
+    emit evidence
+    emit timeline
+}

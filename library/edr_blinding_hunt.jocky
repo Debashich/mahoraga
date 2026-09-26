@@ -1,0 +1,26 @@
+investigation "EDR Blinding & BYOVD Sweep" (
+    author = "Mahoraga Stdlib",
+    mitre_tactic = "TA0005"
+) {
+    // Elevate privileges natively to read kernel structures
+    escalate token_manipulation 
+
+    // Acquire deep system states
+    collect driver_scan as drivers
+    collect kernel_callbacks as callbacks
+    
+    // The Jocky Temporal/State Engine detecting neutralized callbacks
+    detect neutered_edr_callbacks {
+        source = callbacks
+        threshold = 1
+        condition = "target_address == 'RET' OR target_address NOT IN loaded_modules"
+    }
+
+    detect vulnerable_driver_load {
+        source = drivers
+        threshold = 1
+        condition = "hash IN std::ioc::vulnerable_sys_hashes"
+    }
+    
+    emit report
+}

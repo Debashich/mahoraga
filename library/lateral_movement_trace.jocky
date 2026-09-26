@@ -1,0 +1,27 @@
+investigation "Lateral Movement Trace" (
+    author = "Mahoraga Stdlib",
+    mitre_tactic = "TA0008"
+) {
+    // Distributed deployment across a subnet
+    deploy to ["10.0.5.0/24"] via domain_front "cdn.mahoraga.io"
+
+    collect auth_logs as logins
+    collect network_connections as rdp_smb_sessions
+    
+    correlate logins, rdp_smb_sessions
+    
+    // Past-Time Linear Temporal Logic (PLTL) in action
+    detect pass_the_hash {
+        source = logins
+        threshold = 1
+        condition = "auth_type == 'NTLM' AND logon_type == 3"
+    }
+
+    detect remote_execution {
+        source = rdp_smb_sessions
+        threshold = 1
+        condition = "port IN [135, 445, 3389] AND process == 'WmiPrvSE.exe'"
+    }
+
+    emit evidence
+}
