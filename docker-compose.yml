@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./compiler:/app/compiler       # Access to Jocky Python compiler
+      - ./runtime:/app/runtime         # Access to native providers
+      - ./build:/app/build             # Access to compiled C++ runtime
+      - ./out:/app/out                 # Shared output directory
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
