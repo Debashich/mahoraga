@@ -25,3 +25,7 @@ temp.jocky
 .idea/
 *.swp
 .DS_Store
+
+# Node.js
+node_modules/
+frontend/node_modules
