@@ -1,18 +1,14 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+* {
+  box-sizing: border-box;
+}
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
 }
-::-webkit-scrollbar-track {
-  background: #0a0e17;
-}
-::-webkit-scrollbar-thumb {
-  background: #1f2937;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
 }
