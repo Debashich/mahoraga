@@ -1,0 +1,30 @@
+{
+  "module": "Stealth Host Sweep",
+  "instructions": [
+    {
+      "type": "collect",
+      "operation": "system_info",
+      "capabilities": [
+        "None"
+      ]
+    },
+    {
+      "type": "collect",
+      "operation": "process_list",
+      "capabilities": [
+        "ProcessRead"
+      ]
+    },
+    {
+      "type": "collect",
+      "operation": "network_connections",
+      "capabilities": [
+        "NetworkRead"
+      ]
+    },
+    {
+      "type": "emit",
+      "target": "evidence"
+    }
+  ]
+}

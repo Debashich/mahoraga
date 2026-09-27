@@ -79,15 +79,14 @@ int main(int argc, char* argv[]) {
         std::cout << "[OK] Payload decrypted and parsed."
                   << std::endl;
 
-        /*
-         * Continue here with your Odin Dispatcher / Runtime
-         * integration using instruction_contract.
-         *
-         * For example:
-         *
-         * Dispatcher dispatcher(...);
-         * dispatcher.dispatch(instruction_contract);
-         */
+        std::unique_ptr<Provider> provider;
+#ifdef _WIN32
+        provider = std::make_unique<WindowsProvider>();
+#else
+        provider = std::make_unique<LinuxProvider>();
+#endif
+        Runtime runtime(std::move(provider));
+        runtime.execute(instruction_contract);
 
         return 0;
     }

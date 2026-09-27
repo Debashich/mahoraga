@@ -42,7 +42,7 @@ OUT_DIR = ROOT / "out"
 INSTRUCTIONS_DIR = OUT_DIR / "instructions"
 EVIDENCE_DIR = OUT_DIR / "evidence"
 
-COMPILER = ROOT / "mahoraga"
+COMPILER = (ROOT / "mahoraga.bat") if (os.name == "nt" and (ROOT / "mahoraga.bat").exists()) else (ROOT / "mahoraga")
 
 # Native runtime layout is fixed by the project:
 #   ~/mahoraga/build/mahoraga-run
@@ -70,6 +70,10 @@ LINUX_PROVIDER_SUPPORTED = {
     "process_list", "system_info", "users", "network_connections",
     "auth_logs", "file_metadata", "memory_snapshot", "driver_scan",
     "kernel_callbacks", "registry_hives", "event_logs",
+}
+
+WINDOWS_PROVIDER_SUPPORTED = {
+    "process_list", "network_connections", "system_info",
 }
 
 PRESETS = {
@@ -221,8 +225,8 @@ DEFAULTS = {
     "source": "",
     "import_panel": None,          # None | "file" | "github" | "demo"
     "preset": "balanced",
-    "target_platform": "Linux",
-    "provider": "Native Linux Provider",
+    "target_platform": "Windows" if os.name == "nt" else "Linux",
+    "provider": "Native Windows Provider" if os.name == "nt" else "Native Linux Provider",
     "runtime_mode": "Native / Local",
     "evidence_format": "Canonical + STIX",
     "integrity": True,
@@ -245,12 +249,21 @@ def utc_now() -> str:
 
 
 def find_runtime() -> Path | None:
-    if NATIVE_RUNTIME.exists() and os.access(NATIVE_RUNTIME, os.X_OK):
-        return NATIVE_RUNTIME
-    if NATIVE_RUNTIME.exists():
-        # Present but not marked executable — still worth surfacing to the
-        # operator instead of silently reporting "not found".
-        return NATIVE_RUNTIME
+    target_platform = st.session_state.get("target_platform", "Windows" if os.name == "nt" else "Linux")
+    candidates = []
+    if target_platform == "Windows" or os.name == "nt":
+        candidates.extend([
+            ROOT / "build" / "mahoraga-run.exe",
+            ROOT / "build" / "Release" / "mahoraga-run.exe",
+            ROOT / "build" / "Debug" / "mahoraga-run.exe",
+        ])
+    candidates.extend([
+        ROOT / "build" / "mahoraga-run",
+        NATIVE_RUNTIME,
+    ])
+    for target in candidates:
+        if target.exists():
+            return target
     return None
 
 
@@ -368,6 +381,8 @@ def provider_unsupported(capabilities: list[str], provider: str) -> list[str]:
     """Real provider-capability diagnostic — never silently ignored."""
     if provider == "Native Linux Provider":
         return [c for c in capabilities if c not in LINUX_PROVIDER_SUPPORTED]
+    elif provider == "Native Windows Provider":
+        return [c for c in capabilities if c not in WINDOWS_PROVIDER_SUPPORTED]
     return []
 
 
@@ -409,7 +424,14 @@ def preflight(source: str) -> dict[str, Any]:
     lint_errors = semantic_lint(source, parsed)
     runtime = find_runtime()
     unsupported = provider_unsupported(parsed["collections"], st.session_state.provider)
-    is_root = hasattr(os, "geteuid") and os.geteuid() == 0
+    if hasattr(os, "geteuid"):
+        is_root = os.geteuid() == 0
+    else:
+        try:
+            import ctypes
+            is_root = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            is_root = False
 
     checks = [
         {
@@ -432,28 +454,28 @@ def preflight(source: str) -> dict[str, Any]:
             "detail": (
                 "All requested capabilities are serviced by the active provider."
                 if not unsupported
-                else "Unsupported by Native Linux Provider: " + ", ".join(unsupported)
+                else f"Unsupported by {st.session_state.provider}: " + ", ".join(unsupported)
             ),
         },
         {
             "name": "Privilege context",
             "status": "PASS" if is_root else "WARN",
             "detail": (
-                "Running with root privileges."
+                "Running with administrative/root privileges."
                 if is_root
-                else "Non-root context. Some capabilities (memory_snapshot, driver_scan, "
+                else "Non-elevated context. Some capabilities (memory_snapshot, driver_scan, "
                      "kernel_callbacks) may return partial results or fail at execution time."
             ),
         },
         {
             "name": "Target platform",
-            "status": "PASS" if st.session_state.target_platform == "Linux" else "BLOCK",
+            "status": "PASS" if st.session_state.target_platform in ["Linux", "Windows"] else "BLOCK",
             "detail": st.session_state.target_platform,
         },
         {
             "name": "Native runtime",
             "status": "PASS" if runtime is not None else "BLOCK",
-            "detail": str(runtime) if runtime else f"mahoraga-run not found at {NATIVE_RUNTIME}",
+            "detail": str(runtime) if runtime else f"{'mahoraga-run.exe' if st.session_state.target_platform == 'Windows' else 'mahoraga-run'} not found at {ROOT / 'build' / ('mahoraga-run.exe' if st.session_state.target_platform == 'Windows' else 'mahoraga-run')}",
         },
     ]
 
@@ -950,8 +972,17 @@ st.caption(PRESETS[st.session_state.preset]["intent"])
 
 c1, c2 = st.columns(2)
 with c1:
-    st.selectbox("target platform", ["Linux"], key="target_platform")
-    st.selectbox("execution provider", ["Native Linux Provider"], key="provider")
+    platforms = ["Linux", "Windows"]
+    current_platform = st.session_state.get("target_platform", "Windows" if os.name == "nt" else "Linux")
+    if current_platform not in platforms:
+        current_platform = "Linux"
+    platform_idx = platforms.index(current_platform)
+    st.selectbox("target platform", platforms, index=platform_idx, key="target_platform")
+    if st.session_state.target_platform == "Windows":
+        st.session_state.provider = "Native Windows Provider"
+    else:
+        st.session_state.provider = "Native Linux Provider"
+    st.selectbox("execution provider", [st.session_state.provider], key="provider_view", disabled=True)
     st.selectbox("execution mode", ["Native / Local", "Analysis Only"], key="runtime_mode")
 with c2:
     st.selectbox("evidence output", ["Canonical + STIX", "Canonical"], key="evidence_format")
