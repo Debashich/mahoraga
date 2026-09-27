@@ -1,5 +1,4 @@
-import { Fragment } from 'react';
-import { GitCommit, ArrowRight, ShieldCheck, FileText, Cpu, Lock, Terminal, Radio, Loader2 } from 'lucide-react';
+import { GitCommit, ShieldCheck, FileText, Cpu, Lock, Terminal, Radio, Loader2, AlertTriangle } from 'lucide-react';
 
 const PIPELINE_STAGES = [
   { id: 'source', name: 'Jocky Source', icon: Terminal, desc: 'DSL Script Authoring' },
@@ -19,26 +18,68 @@ export default function PipelineStatusPanel({
   orchestrationResult, 
   onTriggerOrchestration 
 }) {
-  const getStageStatus = (stageId) => {
+  const getStageStatus = (stageId, index) => {
     if (isOrchestrating) {
-      return { label: 'RUNNING...', color: 'text-warning' };
+      return { 
+        status: 'running', 
+        label: 'RUNNING...', 
+        colorClass: 'status-running', 
+        badgeClass: 'badge-warning',
+      };
     }
+
     if (!orchestrationResult) {
-      return { label: 'READY', color: 'text-muted' };
+      return { 
+        status: 'ready', 
+        label: 'READY', 
+        colorClass: 'status-ready', 
+        badgeClass: 'badge-muted',
+      };
     }
+
     if (orchestrationResult.success) {
-      // Backend returns pipeline completed
-      if (stageId === 'source' || stageId === 'compiler' || stageId === 'ir' || stageId === 'sealing' || stageId === 'stix' || stageId === 'runtime' || stageId === 'provider' || stageId === 'payload' || stageId === 'evidence') {
-        return { label: 'COMPLETED', color: 'text-success' };
-      }
-      return { label: 'PASSED', color: 'text-success' };
+      return { 
+        status: 'completed', 
+        label: 'COMPLETED', 
+        colorClass: 'status-completed', 
+        badgeClass: 'badge-emerald',
+      };
+    }
+
+    // Execution failed
+    const failedStageStr = String(orchestrationResult.stage || '').toLowerCase();
+    let failedIdx = 4; // default to runtime (odin-run / executable_lookup)
+    if (failedStageStr.includes('compiler')) {
+      failedIdx = 1;
+    } else if (failedStageStr.includes('sealing')) {
+      failedIdx = 7;
+    } else if (failedStageStr.includes('detection') || failedStageStr.includes('stix')) {
+      failedIdx = 8;
+    } else if (failedStageStr.includes('runtime') || failedStageStr.includes('odin-run') || failedStageStr.includes('executable_lookup')) {
+      failedIdx = 4;
+    }
+
+    if (index < failedIdx) {
+      return { 
+        status: 'completed', 
+        label: 'COMPLETED', 
+        colorClass: 'status-completed', 
+        badgeClass: 'badge-emerald',
+      };
+    } else if (index === failedIdx) {
+      return { 
+        status: 'failed', 
+        label: 'FAILED HERE', 
+        colorClass: 'status-failed', 
+        badgeClass: 'badge-error',
+      };
     } else {
-      // Execution failed
-      const failedStage = String(orchestrationResult.stage || '');
-      if (failedStage.toLowerCase().includes(stageId) || (stageId === 'runtime' && failedStage.includes('odin-run')) || (stageId === 'compiler' && failedStage.includes('compiler'))) {
-        return { label: 'FAILED HERE', color: 'text-error' };
-      }
-      return { label: 'BLOCKED', color: 'text-muted' };
+      return { 
+        status: 'blocked', 
+        label: 'BLOCKED', 
+        colorClass: 'status-blocked', 
+        badgeClass: 'badge-muted',
+      };
     }
   };
 
@@ -66,29 +107,55 @@ export default function PipelineStatusPanel({
       </div>
 
       <div className="panel-body">
-        {/* Pipeline Stage Flow */}
-        <div className="pipeline-flow-container font-mono">
+        {/* Vertical Pipeline Stage Flow */}
+        <div className="vertical-pipeline-container font-mono">
           {PIPELINE_STAGES.map((stage, idx) => {
             const Icon = stage.icon;
-            const statusInfo = getStageStatus(stage.id);
+            const statusInfo = getStageStatus(stage.id, idx);
+            const isLast = idx === PIPELINE_STAGES.length - 1;
+            const isFailed = statusInfo.status === 'failed';
+
             return (
-              <Fragment key={stage.id}>
-                <div className="pipeline-node">
-                  <div className="node-icon-box">
-                    <Icon size={14} />
+              <div 
+                key={stage.id} 
+                className={`pipeline-step-item ${isFailed ? 'step-item-failed' : ''}`}
+              >
+                {/* Timeline Column with Icon Node and Vertical Line */}
+                <div className="step-timeline-col">
+                  <div className={`step-node-icon ${statusInfo.colorClass}`}>
+                    {statusInfo.status === 'running' ? (
+                      <Loader2 size={12} className="spin" />
+                    ) : statusInfo.status === 'failed' ? (
+                      <AlertTriangle size={12} />
+                    ) : (
+                      <Icon size={12} />
+                    )}
                   </div>
-                  <div className="node-info">
-                    <span className="node-step">STAGE 0{idx + 1}</span>
-                    <span className="node-name">{stage.name}</span>
-                    <span className={`node-status ${statusInfo.color}`}>{statusInfo.label}</span>
-                  </div>
+                  {!isLast && (
+                    <div className={`step-vertical-line line-${statusInfo.status}`} />
+                  )}
                 </div>
-                {idx < PIPELINE_STAGES.length - 1 && (
-                  <div className="pipeline-connector">
-                    <ArrowRight size={12} className="text-muted" />
+
+                {/* Content Column */}
+                <div className="step-content-box">
+                  <div className="step-header-row">
+                    <div className="step-title-group">
+                      <span className="step-num">STAGE 0{idx + 1}</span>
+                      <span className="step-name">{stage.name}</span>
+                      <span className="step-desc-inline">— {stage.desc}</span>
+                    </div>
+                    <span className={`badge ${statusInfo.badgeClass}`}>
+                      {statusInfo.label}
+                    </span>
                   </div>
-                )}
-              </Fragment>
+
+                  {isFailed && (
+                    <div className="failed-stage-notice">
+                      <span>Execution halted: {orchestrationResult?.error || 'Native runtime error'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -141,7 +208,7 @@ export default function PipelineStatusPanel({
 
       <style>{`
         .pipeline-card {
-          min-height: 280px;
+          min-height: 440px;
         }
 
         .header-actions {
@@ -150,62 +217,147 @@ export default function PipelineStatusPanel({
           gap: 8px;
         }
 
-        .pipeline-flow-container {
+        .vertical-pipeline-container {
           display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px;
+          flex-direction: column;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          overflow-x: auto;
+          padding: 8px 12px;
           margin-bottom: 10px;
+          gap: 0px;
         }
 
-        .pipeline-node {
+        .pipeline-step-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          position: relative;
+          padding: 4px 6px;
+          border-radius: var(--radius-md);
+          background: transparent;
+          border: 1px solid transparent;
+        }
+
+        .step-item-failed {
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        .step-timeline-col {
           display: flex;
           flex-direction: column;
           align-items: center;
-          text-align: center;
-          min-width: 85px;
+          width: 22px;
+          min-width: 22px;
+          position: relative;
+          align-self: stretch;
         }
 
-        .node-icon-box {
-          width: 28px;
-          height: 28px;
+        .step-node-icon {
+          width: 22px;
+          height: 22px;
           border-radius: 0px;
-          background: var(--bg-tertiary);
-          border: 1px solid var(--border-color);
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 4px;
-          color: var(--text-primary);
-        }
-
-        .node-step {
-          font-size: 8px;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-color);
           color: var(--text-muted);
-          font-weight: 700;
+          z-index: 2;
         }
 
-        .node-name {
-          font-size: 9.5px;
-          font-weight: 600;
-          color: var(--text-primary);
-          white-space: nowrap;
+        .status-completed {
+          background: rgba(56, 142, 60, 0.1);
+          border-color: var(--status-success);
+          color: var(--status-success);
         }
 
-        .node-status {
-          font-size: 8.5px;
-          font-weight: 700;
+        .status-failed {
+          background: rgba(211, 47, 47, 0.12);
+          border-color: var(--status-error);
+          color: var(--status-error);
+        }
+
+        .status-running {
+          background: rgba(245, 124, 0, 0.15);
+          border-color: var(--status-warning);
+          color: var(--status-warning);
+        }
+
+        .status-ready, .status-blocked {
+          background: var(--bg-secondary);
+          border-color: var(--border-color);
+          color: var(--text-muted);
+        }
+
+        .step-vertical-line {
+          width: 1px;
+          flex: 1;
+          min-height: 14px;
+          background: var(--border-color);
           margin-top: 1px;
+          margin-bottom: -3px;
         }
 
-        .pipeline-connector {
+        .line-completed {
+          background: var(--status-success);
+        }
+
+        .line-running {
+          background: var(--status-warning);
+        }
+
+        .step-content-box {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          padding-bottom: 2px;
+        }
+
+        .step-header-row {
           display: flex;
           align-items: center;
-          padding: 0 2px;
+          justify-content: space-between;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .step-title-group {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .step-num {
+          font-size: 9.5px;
+          font-weight: 700;
           color: var(--text-muted);
+          letter-spacing: 0.5px;
+        }
+
+        .step-name {
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .step-desc-inline {
+          font-size: 10px;
+          color: var(--text-muted);
+        }
+
+        .failed-stage-notice {
+          margin-top: 2px;
+          font-size: 10px;
+          color: var(--status-error);
+          font-weight: 500;
+        }
+
+        .badge-muted {
+          border-color: var(--border-color);
+          color: var(--text-muted);
+          background: var(--bg-secondary);
         }
 
         .execution-log-box {
@@ -262,3 +414,5 @@ export default function PipelineStatusPanel({
     </div>
   );
 }
+
+
