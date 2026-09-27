@@ -33,15 +33,15 @@ export default function PreflightDiagnosticsPanel({ preflightResults, onRunCheck
           <span>Pre-Flight Compiler & Runtime Diagnostics</span>
         </div>
         <button className="btn btn-primary" onClick={onRunCheck}>
-          Re-Run Pre-Flight
+          Run Pre-Flight Analysis
         </button>
       </div>
 
       <div className="panel-body">
         <div className="diag-intro">
           <span>
-            Pre-flight diagnostics evaluate DSL syntax, AST node lowering, platform matrix compatibility, 
-            and C++ native provider binary availability before executing the pipeline.
+            Pre-flight diagnostics evaluate Jocky DSL syntax locally and report capability support. 
+            Backend endpoints unexposed by `cmi/server.py` are explicitly marked.
           </span>
         </div>
 
@@ -69,7 +69,7 @@ export default function PreflightDiagnosticsPanel({ preflightResults, onRunCheck
             ))
           ) : (
             <div className="empty-diag">
-              <span>No pre-flight diagnostic run performed yet. Click "Re-Run Pre-Flight" above.</span>
+              <span>No pre-flight diagnostic run performed yet. Click "Run Pre-Flight Analysis" above.</span>
             </div>
           )}
         </div>

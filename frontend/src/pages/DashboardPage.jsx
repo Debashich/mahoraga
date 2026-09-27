@@ -10,7 +10,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-export default function DashboardPage({ onNavigate }) {
+export default function DashboardPage({ onNavigate, cmiConnected, lastResult }) {
   const stats = [
     { label: 'JOCKY COMPILER', val: 'Active (Lark v1)', icon: Terminal },
     { label: 'NATIVE RUNTIME', val: 'mahoraga-run', icon: Cpu },
@@ -18,11 +18,7 @@ export default function DashboardPage({ onNavigate }) {
     { label: 'STIX ENGINE', val: 'STIX 2.1 & PLTL', icon: Radar },
   ];
 
-  const recentInvestigations = [
-    { id: 'NTRO-Sweep-A81F92', script: 'host_sweep.jocky', platform: 'Linux', status: 'COMPLETED', time: '10 mins ago' },
-    { id: 'NTRO-Sweep-73B01C', script: 'hunt.jocky', platform: 'Linux', status: 'COMPLETED', time: '1 hour ago' },
-    { id: 'NTRO-Sweep-42E9DF', script: 'process_inventory.jocky', platform: 'Windows', status: 'DEMO / PENDING', time: '3 hours ago' },
-  ];
+  const hasRealData = lastResult && lastResult.success && lastResult.data;
 
   return (
     <div className="dashboard-page">
@@ -117,11 +113,10 @@ export default function DashboardPage({ onNavigate }) {
               </div>
             </div>
 
-            <div className="api-notice-box badge badge-warning">
+            <div className={`api-notice-box badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
               <AlertCircle size={14} />
               <span>
-                <strong>System Notice:</strong> Frontend running in standalone UI shell mode. 
-                Connect CMI FastAPI backend (`cmi/server.py`) to trigger live binary execution.
+                <strong>CMI Status:</strong> {cmiConnected ? 'FastAPI Backend LIVE (http://localhost:8000). Ready for POST /api/v1/orchestrate' : 'Backend OFFLINE. Run python -m uvicorn cmi.server:app --port 8000'}
               </span>
             </div>
           </div>
@@ -132,25 +127,26 @@ export default function DashboardPage({ onNavigate }) {
           <div className="panel-header">
             <div className="panel-title">
               <Server size={14} />
-              <span>Recent Investigations</span>
+              <span>Session Investigation History</span>
             </div>
           </div>
           <div className="panel-body">
-            <div className="investigation-list">
-              {recentInvestigations.map((inv) => (
-                <div key={inv.id} className="inv-row">
+            <div className="investigation-list font-mono">
+              {hasRealData ? (
+                <div className="inv-row">
                   <div className="inv-info">
-                    <span className="inv-id">{inv.id}</span>
-                    <span className="inv-script">{inv.script} ({inv.platform})</span>
+                    <span className="inv-id">{lastResult.data.investigation_id}</span>
+                    <span className="inv-script">Platform: {lastResult.data.target_platform}</span>
                   </div>
                   <div className="inv-status">
-                    <span className={`badge ${inv.status === 'COMPLETED' ? 'badge-emerald' : 'badge-amber'}`}>
-                      {inv.status}
-                    </span>
-                    <span className="inv-time">{inv.time}</span>
+                    <span className="badge badge-emerald">COMPLETED</span>
                   </div>
                 </div>
-              ))}
+              ) : (
+                <div className="empty-history font-mono">
+                  <span>No orchestration run triggered in current session yet.</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -289,6 +285,7 @@ export default function DashboardPage({ onNavigate }) {
           padding: 8px 12px;
           font-size: 10.5px;
           color: var(--text-secondary);
+          width: 100%;
         }
 
         .investigation-list {
@@ -322,16 +319,11 @@ export default function DashboardPage({ onNavigate }) {
           color: var(--text-muted);
         }
 
-        .inv-status {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 2px;
-        }
-
-        .inv-time {
-          font-size: 8.5px;
+        .empty-history {
+          font-size: 10.5px;
           color: var(--text-muted);
+          padding: 10px;
+          text-align: center;
         }
       `}</style>
     </div>

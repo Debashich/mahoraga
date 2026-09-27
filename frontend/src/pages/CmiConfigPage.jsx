@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Server, WifiOff, RefreshCw, Database } from 'lucide-react';
+import { Server, WifiOff, Wifi, RefreshCw, Database } from 'lucide-react';
 
-export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
-  const [apiUrl, setApiUrl] = useState('http://localhost:8000');
-  const [runtimePath, setRuntimePath] = useState('build/mahoraga-run');
+export default function CmiConfigPage({ targetPlatform, onPlatformChange, cmiConnected, cmiStatusText, onRefreshHealth }) {
+  const [apiUrl, setApiUrl] = useState(import.meta.env.VITE_CMI_API_URL || 'http://localhost:8000');
+  const [runtimePath] = useState('build/mahoraga-run');
   const [testingStatus, setTestingStatus] = useState(null);
 
-  const handleTestConnection = () => {
+  const handleTestConnection = async () => {
     setTestingStatus('testing');
-    setTimeout(() => {
-      setTestingStatus('not_connected');
-    }, 1200);
+    if (onRefreshHealth) {
+      await onRefreshHealth();
+    }
+    setTestingStatus('done');
   };
 
   return (
@@ -28,9 +29,9 @@ export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
         </div>
 
         <div className="banner-actions">
-          <div className="badge badge-warning">
-            <WifiOff size={11} />
-            <span>FASTAPI SERVER: NOT CONNECTED (DEMO MODE)</span>
+          <div className={`badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
+            {cmiConnected ? <Wifi size={11} /> : <WifiOff size={11} />}
+            <span>CMI SERVER STATUS: {cmiConnected ? 'LIVE (PORT 8000)' : 'OFFLINE'}</span>
           </div>
         </div>
       </div>
@@ -41,30 +42,30 @@ export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
           <div className="panel-header">
             <div className="panel-title">
               <Server size={14} />
-              <span>CMI REST API Connection</span>
+              <span>CMI REST API Connection Settings</span>
             </div>
           </div>
           <div className="panel-body">
             <div className="form-group">
-              <label className="form-label">FastAPI Backend Server URL</label>
+              <label className="form-label">FastAPI Backend Server URL (VITE_CMI_API_URL)</label>
               <input 
                 type="text" 
                 className="form-input" 
                 value={apiUrl} 
                 onChange={(e) => setApiUrl(e.target.value)}
               />
-              <span className="field-hint">Default FastAPI server endpoint runs on cmi/server.py:8000</span>
+              <span className="field-hint">Configured in frontend/.env as VITE_CMI_API_URL</span>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Native Runtime Binary Location</label>
+              <label className="form-label">Native Runtime Binary Path (Targeted by Backend)</label>
               <input 
                 type="text" 
                 className="form-input" 
                 value={runtimePath} 
-                onChange={(e) => setRuntimePath(e.target.value)}
+                readOnly
               />
-              <span className="field-hint">Path to compiled C++ runtime executable: build/mahoraga-run</span>
+              <span className="field-hint">Path used by backend for execution: build/mahoraga-run</span>
             </div>
 
             <div className="form-group">
@@ -86,16 +87,19 @@ export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
                 disabled={testingStatus === 'testing'}
               >
                 <RefreshCw size={12} className={testingStatus === 'testing' ? 'spin' : ''} />
-                {testingStatus === 'testing' ? 'Testing Connection...' : 'Test CMI Connection'}
+                {testingStatus === 'testing' ? 'Testing Connection...' : 'Ping CMI Connection'}
               </button>
             </div>
 
-            {testingStatus === 'not_connected' && (
-              <div className="test-result-box badge badge-warning">
-                <WifiOff size={13} />
-                <span>Backend API not reachable at {apiUrl}. Start server with: <code>uvicorn cmi.server:app --port 8000</code></span>
-              </div>
-            )}
+            <div className={`test-result-box badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
+              {cmiConnected ? <Wifi size={13} /> : <WifiOff size={13} />}
+              <span>
+                {cmiConnected 
+                  ? `Backend API connected successfully at ${apiUrl} (${cmiStatusText}).`
+                  : `Backend API not reachable at ${apiUrl}. Run: python -m uvicorn cmi.server:app --port 8000`
+                }
+              </span>
+            </div>
           </div>
         </div>
 
@@ -104,7 +108,7 @@ export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
           <div className="panel-header">
             <div className="panel-title">
               <Database size={14} />
-              <span>CMI API Endpoint Registry</span>
+              <span>Discovered Backend Endpoint Registry</span>
             </div>
           </div>
           <div className="panel-body">
@@ -113,30 +117,22 @@ export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
                 <div className="endpoint-top">
                   <span className="method post">POST</span>
                   <span className="path">/api/v1/orchestrate</span>
+                  <span className="badge badge-emerald">EXPOSED</span>
                 </div>
                 <div className="endpoint-desc">
-                  Triggers end-to-end investigation pipeline (Compile $\rightarrow$ Encrypt $\rightarrow$ Native Execution $\rightarrow$ Seal $\rightarrow$ STIX).
+                  Accepts <code>{`{ jocky_source, target_platform }`}</code>. Runs Jocky Compiler $\rightarrow$ Payload Encapsulation $\rightarrow$ Native Runtime $\rightarrow$ Evidence Sealing $\rightarrow$ STIX 2.1 Engine.
                 </div>
               </div>
 
-              <div className="endpoint-item">
-                <div className="endpoint-top">
-                  <span className="method get">GET</span>
-                  <span className="path">/api/v1/capabilities</span>
-                </div>
-                <div className="endpoint-desc">
-                  Queries provider capability contract and supported collection operations.
-                </div>
-              </div>
-
-              <div className="endpoint-item">
-                <div className="endpoint-top">
-                  <span className="method post">POST</span>
-                  <span className="path">/api/v1/compile</span>
-                </div>
-                <div className="endpoint-desc">
-                  Parses Jocky DSL source and lowers to JSON Forensic IR without native binary execution.
-                </div>
+              <div className="unexposed-list font-mono">
+                <div className="unexposed-header">ENDPOINTS NOT EXPOSED BY CURRENT BACKEND (cmi/server.py):</div>
+                <ul>
+                  <li><code>GET /api/v1/capabilities</code> (Not exposed)</li>
+                  <li><code>GET /api/v1/examples</code> (Not exposed)</li>
+                  <li><code>POST /api/v1/compile</code> (Not exposed)</li>
+                  <li><code>GET /api/v1/evidence</code> (Not exposed)</li>
+                  <li><code>GET /api/v1/stix</code> (Not exposed)</li>
+                </ul>
               </div>
             </div>
           </div>
@@ -232,11 +228,6 @@ export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
           color: var(--text-primary);
         }
 
-        .method.get {
-          background: var(--bg-tertiary);
-          color: var(--text-primary);
-        }
-
         .path {
           font-size: 10.5px;
           font-weight: 700;
@@ -246,6 +237,30 @@ export default function CmiConfigPage({ targetPlatform, onPlatformChange }) {
         .endpoint-desc {
           font-size: 9.5px;
           color: var(--text-secondary);
+        }
+
+        .unexposed-list {
+          font-size: 10px;
+          color: var(--text-muted);
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          padding: 8px;
+          margin-top: 8px;
+        }
+
+        .unexposed-header {
+          font-weight: 700;
+          margin-bottom: 4px;
+          color: var(--text-secondary);
+        }
+
+        .unexposed-list ul {
+          padding-left: 16px;
+          margin: 0;
+        }
+
+        .unexposed-list li {
+          margin: 2px 0;
         }
 
         .spin {

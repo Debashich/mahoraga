@@ -9,7 +9,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-export default function Sidebar({ activeRoute, onNavigate, collapsed, onToggleCollapse }) {
+export default function Sidebar({ activeRoute, onNavigate, collapsed, onToggleCollapse, cmiConnected }) {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity, desc: 'Overview & Status' },
     { id: 'workbench', label: 'Jocky Workbench', icon: Terminal, desc: 'DSL Compiler & IDE' },
@@ -66,12 +66,14 @@ export default function Sidebar({ activeRoute, onNavigate, collapsed, onToggleCo
       {!collapsed && (
         <div className="sidebar-footer">
           <div className="system-health">
-            <span className="health-dot" />
-            <span className="health-text">PIPELINE READY</span>
+            <span className={`health-dot ${cmiConnected ? 'online' : 'offline'}`} />
+            <span className="health-text">{cmiConnected ? 'BACKEND ONLINE' : 'BACKEND OFFLINE'}</span>
           </div>
           <div className="cmi-status-mini">
             <span>CMI API: </span>
-            <span className="text-warning">DEMO MODE</span>
+            <span className={cmiConnected ? "text-success" : "text-warning"}>
+              {cmiConnected ? 'CONNECTED' : 'OFFLINE'}
+            </span>
           </div>
         </div>
       )}
@@ -236,11 +238,23 @@ export default function Sidebar({ activeRoute, onNavigate, collapsed, onToggleCo
         .health-dot {
           width: 6px;
           height: 6px;
+        }
+
+        .health-dot.online {
           background: var(--status-success);
+        }
+
+        .health-dot.offline {
+          background: var(--status-warning);
         }
 
         .cmi-status-mini {
           color: var(--text-muted);
+        }
+
+        .text-success {
+          color: var(--status-success);
+          font-weight: 600;
         }
 
         .text-warning {

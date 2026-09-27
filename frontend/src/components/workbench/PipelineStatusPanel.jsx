@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { GitCommit, ArrowRight, ShieldCheck, FileText, Cpu, Lock, Terminal, Radio } from 'lucide-react';
+import { GitCommit, ArrowRight, ShieldCheck, FileText, Cpu, Lock, Terminal, Radio, Loader2 } from 'lucide-react';
 
 const PIPELINE_STAGES = [
   { id: 'source', name: 'Jocky Source', icon: Terminal, desc: 'DSL Script Authoring' },
@@ -13,22 +13,31 @@ const PIPELINE_STAGES = [
   { id: 'stix', name: 'STIX 2.1', icon: GitCommit, desc: 'Threat Intelligence Bundle' },
 ];
 
-export default function PipelineStatusPanel({ executionState, onTriggerOrchestration }) {
+export default function PipelineStatusPanel({ 
+  cmiConnected, 
+  isOrchestrating, 
+  orchestrationResult, 
+  onTriggerOrchestration 
+}) {
   return (
     <div className="panel-card pipeline-card">
       <div className="panel-header">
         <div className="panel-title">
           <GitCommit size={14} />
-          <span>Mahoraga Pipeline Status & Execution Flow</span>
+          <span>Mahoraga Pipeline Execution Flow</span>
         </div>
         
         <div className="header-actions">
-          <span className="badge badge-warning">BACKEND API: NOT CONNECTED (DEMO)</span>
+          <span className={`badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
+            {cmiConnected ? 'CMI API: CONNECTED' : 'CMI API: OFFLINE'}
+          </span>
           <button 
             className="btn btn-primary"
             onClick={onTriggerOrchestration}
+            disabled={isOrchestrating}
           >
-            Trigger Pipeline Pre-Flight
+            {isOrchestrating ? <Loader2 size={12} className="spin" /> : <GitCommit size={12} />}
+            {isOrchestrating ? 'Orchestrating...' : 'Execute POST /api/v1/orchestrate'}
           </button>
         </div>
       </div>
@@ -64,17 +73,43 @@ export default function PipelineStatusPanel({ executionState, onTriggerOrchestra
         <div className="execution-log-box">
           <div className="log-header">
             <span>PIPELINE CONSOLE LOGS</span>
-            <span className="status-tag">Status: Pending API Connect</span>
+            <span className="status-tag">
+              API Path: POST /api/v1/orchestrate
+            </span>
           </div>
           <div className="log-content">
-            {executionState ? (
-              <pre>{executionState.logs}</pre>
+            {isOrchestrating ? (
+              <div className="log-loading">
+                <Loader2 size={14} className="spin" />
+                <span>Sending orchestration request to CMI backend (POST /api/v1/orchestrate)...</span>
+              </div>
+            ) : orchestrationResult ? (
+              orchestrationResult.success ? (
+                <div className="log-success">
+                  <p className="text-success">[+] Investigation Pipeline Completed Successfully!</p>
+                  <p>Status: {orchestrationResult.data.status}</p>
+                  <p>Investigation ID: {orchestrationResult.data.investigation_id}</p>
+                  <p>Target Platform: {orchestrationResult.data.target_platform}</p>
+                  <p>Sealed Evidence: {orchestrationResult.data.sealed_evidence}</p>
+                  <p>STIX Bundle: {orchestrationResult.data.stix_bundle}</p>
+                  <p>Operations: {JSON.stringify(orchestrationResult.data.operations)}</p>
+                </div>
+              ) : (
+                <div className="log-error">
+                  <p className="text-error">[!] Investigation Pipeline Failed</p>
+                  <p>Error: {orchestrationResult.error}</p>
+                  {orchestrationResult.stage && <p>Failed Stage: {JSON.stringify(orchestrationResult.stage)}</p>}
+                  {orchestrationResult.investigationId && <p>Investigation ID: {orchestrationResult.investigationId}</p>}
+                </div>
+              )
             ) : (
               <div className="log-placeholder">
                 <p>[+] Pipeline ready.</p>
-                <p>[+] Target: Native Provider (Local Laboratory Context)</p>
-                <p>[!] Note: CMI FastAPI Server is not connected on port 8000. Pipeline commands will run in preview/demo mode.</p>
-                <p>[+] Click "Trigger Pipeline Pre-Flight" to initiate dry-run pass.</p>
+                <p>[+] Target CMI Backend: {cmiConnected ? 'LIVE (http://localhost:8000)' : 'OFFLINE'}</p>
+                {!cmiConnected && (
+                  <p className="text-warning">[!] Backend offline. Start backend with: python -m uvicorn cmi.server:app --port 8000</p>
+                )}
+                <p>[+] Click "Execute POST /api/v1/orchestrate" to run investigation through backend.</p>
               </div>
             )}
           </div>
@@ -172,15 +207,34 @@ export default function PipelineStatusPanel({ executionState, onTriggerOrchestra
           font-size: 11px;
           color: var(--text-secondary);
           line-height: 1.5;
-          max-height: 130px;
+          max-height: 140px;
           overflow-y: auto;
         }
 
-        .log-placeholder p {
+        .log-placeholder p, .log-success p, .log-error p {
           margin: 2px 0;
         }
 
+        .log-loading {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--text-primary);
+        }
+
+        .text-success { color: var(--status-success); font-weight: 600; }
+        .text-error { color: var(--status-error); font-weight: 600; }
+        .text-warning { color: var(--status-warning); font-weight: 600; }
         .text-muted { color: var(--text-muted); }
+
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
       `}</style>
     </div>
   );

@@ -4,7 +4,17 @@ import InvestigationConfigPanel from '../components/workbench/InvestigationConfi
 import PreflightDiagnosticsPanel from '../components/workbench/PreflightDiagnosticsPanel';
 import PipelineStatusPanel from '../components/workbench/PipelineStatusPanel';
 
-export default function WorkbenchPage({ targetPlatform, onPlatformChange, preset, onPresetChange }) {
+import { orchestrateInvestigation } from '../utils/cmiClient';
+
+export default function WorkbenchPage({ 
+  targetPlatform, 
+  onPlatformChange, 
+  preset, 
+  onPresetChange,
+  cmiConnected,
+  onOrchestrationComplete,
+  lastResult
+}) {
   const [jockySource, setJockySource] = useState(`investigation "Host Sweep Investigation" {
     collect process_list as procs
     collect system_info as sys
@@ -27,7 +37,8 @@ export default function WorkbenchPage({ targetPlatform, onPlatformChange, preset
   ]);
 
   const [preflightResults, setPreflightResults] = useState(null);
-  const [executionState, setExecutionState] = useState(null);
+  const [isOrchestrating, setIsOrchestrating] = useState(false);
+  const [orchestrationResult, setOrchestrationResult] = useState(lastResult || null);
 
   const handleToggleCapability = (capId) => {
     if (activeCapabilities.includes(capId)) {
@@ -38,71 +49,50 @@ export default function WorkbenchPage({ targetPlatform, onPlatformChange, preset
   };
 
   const handleRunPreflight = () => {
-    // Client-side preflight evaluation logic matching backend capabilities
-    const hasSyntax = jockySource.includes('investigation') && jockySource.includes('emit evidence');
-    const isRootOrUser = true;
+    const hasInvestigation = jockySource.includes('investigation') && jockySource.includes('{');
+    const hasEmit = jockySource.includes('emit evidence');
+    const validSyntax = hasInvestigation && hasEmit;
 
     const checks = [
       {
-        name: 'Jocky DSL Parser',
-        status: hasSyntax ? 'PASS' : 'BLOCK',
-        detail: hasSyntax ? 'Syntax lexed and validated successfully.' : 'Syntax error: Missing investigation block or emit statement.',
+        name: 'Jocky DSL Syntax',
+        status: validSyntax ? 'PASS' : 'BLOCK',
+        detail: validSyntax ? 'Investigation block and emit statement parsed.' : 'Syntax Error: Missing investigation block or emit statement.',
       },
       {
-        name: 'AST & Semantic Validation',
-        status: hasSyntax ? 'PASS' : 'BLOCK',
-        detail: hasSyntax ? `${activeCapabilities.length} collection statement(s) validated.` : 'AST generation failed.',
+        name: 'Dry-Run AST Lowering API',
+        status: 'WARN',
+        detail: 'Dry-run compile endpoint (/api/v1/compile) not exposed by CMI backend. Use POST /api/v1/orchestrate.',
       },
       {
         name: 'Provider Capability Contract',
         status: 'PASS',
-        detail: `All ${activeCapabilities.length} requested capabilities are supported by ${targetPlatform} Native Provider.`,
+        detail: `Selected capabilities configured for ${targetPlatform} Provider.`,
       },
       {
-        name: 'Privilege Context',
-        status: isRootOrUser ? 'PASS' : 'WARN',
-        detail: 'Standard process execution context. Memory acquisition may require elevated permissions.',
+        name: 'CMI Backend Connection',
+        status: cmiConnected ? 'PASS' : 'WARN',
+        detail: cmiConnected ? 'CMI Backend is LIVE at http://localhost:8000.' : 'CMI Backend is OFFLINE. Run python -m uvicorn cmi.server:app --port 8000',
       },
       {
-        name: 'Target Platform Matrix',
+        name: 'Orchestration Route',
         status: 'PASS',
-        detail: `Target configured for ${targetPlatform} (x86_64).`,
-      },
-      {
-        name: 'C++ Native Runtime Binary',
-        status: 'WARN',
-        detail: 'Expected at build/mahoraga-run (CMI API standalone preview mode active).',
-      },
+        detail: 'POST /api/v1/orchestrate endpoint exists on CMI backend.',
+      }
     ];
 
     setPreflightResults({ checks });
   };
 
-  const handleTriggerOrchestration = () => {
-    // Trigger preview pipeline run log output
-    const timestamp = new Date().toISOString();
-    const invId = `NTRO-Sweep-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  const handleTriggerOrchestration = async () => {
+    setIsOrchestrating(true);
+    const result = await orchestrateInvestigation(jockySource, targetPlatform);
+    setIsOrchestrating(false);
 
-    const logs = `[1/4] Compiling Jocky DSL -> Forensic IR...
-      -> Target: ${targetPlatform}
-      -> Generated Contract ID: ${invId}
-      -> Encrypting payload (Polymorphic IR packaging)...
-
-[2/4] Executing Native C++ Runtime...
-      [!] CMI Backend API at http://localhost:8000 is not running.
-      [!] Native binary build/mahoraga-run cannot be invoked directly from browser context.
-      [!] Pre-flight dry-run completed successfully in UI shell mode.
-
-[3/4] Cryptographic Evidence Sealing...
-      -> SHA-256 seal verification pending backend connection.
-
-[4/4] STIX 2.1 Intelligence Bundle...
-      -> STIX generator ready.
-
-[+] Investigation pre-flight dry-run finished at ${timestamp}.
-[+] To connect live compiler binary, start: python -m cmi.server`;
-
-    setExecutionState({ invId, logs });
+    setOrchestrationResult(result);
+    if (onOrchestrationComplete) {
+      onOrchestrationComplete(result);
+    }
   };
 
   return (
@@ -142,10 +132,13 @@ export default function WorkbenchPage({ targetPlatform, onPlatformChange, preset
         <PreflightDiagnosticsPanel
           preflightResults={preflightResults}
           onRunCheck={handleRunPreflight}
+          cmiConnected={cmiConnected}
         />
 
         <PipelineStatusPanel
-          executionState={executionState}
+          cmiConnected={cmiConnected}
+          isOrchestrating={isOrchestrating}
+          orchestrationResult={orchestrationResult}
           onTriggerOrchestration={handleTriggerOrchestration}
         />
       </div>
@@ -154,18 +147,18 @@ export default function WorkbenchPage({ targetPlatform, onPlatformChange, preset
         .workbench-page {
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 14px;
         }
 
         .workbench-top-grid {
           display: flex;
-          gap: 16px;
+          gap: 14px;
         }
 
         .workbench-bottom-grid {
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 14px;
         }
 
         .grid-col { display: flex; flex-direction: column; }

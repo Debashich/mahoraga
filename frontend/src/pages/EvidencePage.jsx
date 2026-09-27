@@ -1,38 +1,11 @@
 import { useState } from 'react';
 import { FolderLock, ShieldCheck, Download, FileJson, Lock, AlertTriangle } from 'lucide-react';
 
-export default function EvidencePage() {
+export default function EvidencePage({ lastResult, cmiConnected }) {
   const [activeTab, setActiveTab] = useState('sealed');
 
-  const mockSealedEvidence = {
-    investigation_id: "NTRO-Sweep-A81F92",
-    timestamp_utc: "2026-09-27T12:45:00Z",
-    operator_id: "local-operator",
-    platform: "Linux (x86_64)",
-    provider: "Linux Provider",
-    chain_of_custody: {
-      integrity_seal_version: "v1.0-SHA256",
-      verified: true,
-      custodian: "Mahoraga Evidence Sealing Module",
-    },
-    sealed_artifacts: [
-      {
-        capability: "process_list",
-        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        record_count: 142,
-      },
-      {
-        capability: "system_info",
-        sha256: "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589",
-        record_count: 1,
-      },
-      {
-        capability: "network_connections",
-        sha256: "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
-        record_count: 38,
-      },
-    ]
-  };
+  const hasRealData = lastResult && lastResult.success && lastResult.data;
+  const executionData = hasRealData ? lastResult.data : null;
 
   return (
     <div className="evidence-page">
@@ -49,9 +22,11 @@ export default function EvidencePage() {
         </div>
 
         <div className="banner-actions">
-          <span className="badge badge-warning">BACKEND DISCONNECTED (DEMO)</span>
-          <button className="btn btn-primary">
-            <Download size={12} /> Export Air-Gapped Package (.zip)
+          <span className={`badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
+            {cmiConnected ? 'CMI API: CONNECTED' : 'CMI API: OFFLINE'}
+          </span>
+          <button className="btn btn-primary" disabled={!hasRealData}>
+            <Download size={12} /> Export Evidence Package
           </button>
         </div>
       </div>
@@ -68,26 +43,28 @@ export default function EvidencePage() {
           </div>
           <div className="panel-body">
             <div className="bundle-list">
-              <div className="bundle-item active">
-                <div className="bundle-top">
-                  <span className="bundle-id">NTRO-Sweep-A81F92</span>
-                  <span className="badge badge-emerald">SEALED</span>
+              {hasRealData ? (
+                <div className="bundle-item active">
+                  <div className="bundle-top">
+                    <span className="bundle-id">{executionData.investigation_id}</span>
+                    <span className="badge badge-emerald">SEALED</span>
+                  </div>
+                  <div className="bundle-bottom">
+                    <span>Target: {executionData.target_platform}</span>
+                    <span>Status: {executionData.status}</span>
+                  </div>
                 </div>
-                <div className="bundle-bottom">
-                  <span>host_sweep.jocky</span>
-                  <span>3 artifacts</span>
+              ) : (
+                <div className="notice-box badge badge-warning">
+                  <AlertTriangle size={13} />
+                  <span>
+                    No active sealed evidence in session. Run an investigation from the Workbench to generate evidence.
+                  </span>
                 </div>
-              </div>
+              )}
 
-              <div className="bundle-item">
-                <div className="bundle-top">
-                  <span className="bundle-id">NTRO-Sweep-73B01C</span>
-                  <span className="badge badge-emerald">SEALED</span>
-                </div>
-                <div className="bundle-bottom">
-                  <span>hunt.jocky</span>
-                  <span>2 artifacts</span>
-                </div>
+              <div className="unexposed-notice">
+                <span>Note: CMI server (`cmi/server.py`) exposes `/api/v1/orchestrate`, but does not provide a separate `GET /api/v1/evidence` bundle list API.</span>
               </div>
             </div>
           </div>
@@ -107,7 +84,7 @@ export default function EvidencePage() {
                 className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
                 onClick={() => setActiveTab('raw')}
               >
-                <FileJson size={12} /> Raw Evidence JSON
+                <FileJson size={12} /> Raw CMI Execution Output
               </button>
             </div>
           </div>
@@ -115,40 +92,47 @@ export default function EvidencePage() {
           <div className="panel-body">
             {activeTab === 'sealed' ? (
               <div className="sealed-view">
-                <div className="custody-banner badge badge-emerald">
-                  <Lock size={14} />
-                  <div>
-                    <span className="custody-title">Chain of Custody Status: VERIFIED</span>
-                    <span className="custody-sub">
-                      SHA-256 hashes generated by Mahoraga evidence module on {mockSealedEvidence.timestamp_utc}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="hash-table">
-                  <div className="hash-table-header">
-                    <span>CAPABILITY</span>
-                    <span>RECORDS</span>
-                    <span>SHA-256 INTEGRITY DIGEST</span>
-                  </div>
-                  {mockSealedEvidence.sealed_artifacts.map((art, idx) => (
-                    <div key={idx} className="hash-row">
-                      <span className="art-name">{art.capability}</span>
-                      <span className="art-count">{art.record_count}</span>
-                      <span className="art-hash">{art.sha256}</span>
+                {hasRealData ? (
+                  <>
+                    <div className="custody-banner badge badge-emerald">
+                      <Lock size={14} />
+                      <div>
+                        <span className="custody-title">Chain of Custody Status: VERIFIED</span>
+                        <span className="custody-sub">
+                          Sealed file generated: {executionData.sealed_evidence}
+                        </span>
+                      </div>
                     </div>
-                  ))}
-                </div>
+
+                    <div className="hash-table">
+                      <div className="hash-table-header">
+                        <span>INVESTIGATION ID</span>
+                        <span>STATUS</span>
+                        <span>SEALED EVIDENCE FILE PATH</span>
+                      </div>
+                      <div className="hash-row">
+                        <span className="art-name">{executionData.investigation_id}</span>
+                        <span className="art-count">{executionData.status}</span>
+                        <span className="art-hash">{executionData.sealed_evidence}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="empty-state font-mono">
+                    <p>[!] No evidence returned yet.</p>
+                    <p>Go to Jocky Workbench and click "Execute POST /api/v1/orchestrate".</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="raw-view">
-                <div className="notice-box badge badge-warning">
-                  <AlertTriangle size={13} />
-                  <span>
-                    Raw evidence payload preview. Connect CMI server (`python -m cmi.server`) to fetch live system data.
-                  </span>
-                </div>
-                <pre className="json-pre">{JSON.stringify(mockSealedEvidence, null, 2)}</pre>
+                {hasRealData ? (
+                  <pre className="json-pre">{JSON.stringify(executionData, null, 2)}</pre>
+                ) : (
+                  <div className="empty-state font-mono">
+                    <p>[!] No CMI response data recorded for current session.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -211,11 +195,6 @@ export default function EvidencePage() {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           cursor: pointer;
-          transition: border-color 0.15s ease;
-        }
-
-        .bundle-item:hover {
-          border-color: var(--accent);
         }
 
         .bundle-item.active {
@@ -241,6 +220,14 @@ export default function EvidencePage() {
           justify-content: space-between;
           font-size: 9.5px;
           color: var(--text-muted);
+        }
+
+        .unexposed-notice {
+          font-size: 9.5px;
+          color: var(--text-muted);
+          margin-top: 8px;
+          padding: 6px;
+          border-top: 1px solid var(--border-color);
         }
 
         .panel-tabs {
@@ -340,6 +327,13 @@ export default function EvidencePage() {
           font-size: 10.5px;
           max-height: 280px;
           overflow-y: auto;
+        }
+
+        .empty-state {
+          padding: 20px;
+          text-align: center;
+          color: var(--text-muted);
+          font-size: 11px;
         }
       `}</style>
     </div>

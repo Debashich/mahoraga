@@ -1,4 +1,4 @@
-import { Cpu, Server, Sliders, WifiOff } from 'lucide-react';
+import { Cpu, Server, Sliders, WifiOff, Wifi } from 'lucide-react';
 
 export default function Header({ 
   activeRoute, 
@@ -58,11 +58,11 @@ export default function Header({
           </select>
         </div>
 
-        {/* CMI API Status */}
+        {/* CMI API Status Badge */}
         <div className="header-status">
-          <div className="cmi-badge badge badge-warning">
-            <WifiOff size={11} />
-            <span>{cmiConnected ? "CMI LIVE" : "CMI OFFLINE (DEMO)"}</span>
+          <div className={`cmi-badge badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
+            {cmiConnected ? <Wifi size={11} /> : <WifiOff size={11} />}
+            <span>{cmiConnected ? "CMI LIVE (CONNECTED)" : "CMI OFFLINE"}</span>
           </div>
         </div>
 

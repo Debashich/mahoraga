@@ -1,42 +1,11 @@
 import { useState } from 'react';
-import { Radar, GitCommit, FileCode, Cpu } from 'lucide-react';
+import { Radar, GitCommit, FileCode, Cpu, AlertTriangle } from 'lucide-react';
 
-export default function DetectionStixPage() {
+export default function DetectionStixPage({ lastResult, cmiConnected }) {
   const [viewMode, setViewMode] = useState('objects');
 
-  const mockStixBundle = {
-    type: "bundle",
-    id: "bundle--d740268a-2c81-4b10-a299-8d748a0f912e",
-    spec_version: "2.1",
-    objects: [
-      {
-        type: "identity",
-        id: "identity--mahoraga-forensic-engine",
-        name: "Mahoraga Threat Intelligence Engine",
-        identity_class: "system"
-      },
-      {
-        type: "indicator",
-        id: "indicator--9f123a10-449e-4c12-88ef-90a421b8f101",
-        name: "High-Frequency Process Spawn Correlation",
-        pattern: "[process:name = 'mahoraga-run']",
-        valid_from: "2026-09-27T12:45:00Z"
-      },
-      {
-        type: "observed-data",
-        id: "observed-data--550e8400-e29b-41d4-a716-446655440000",
-        number_observed: 142,
-        first_observed: "2026-09-27T12:45:00Z",
-        last_observed: "2026-09-27T12:45:05Z"
-      }
-    ]
-  };
-
-  const pltlRules = [
-    { name: 'RULE 01: Host Process Sweeping', formula: 'H (process_list -> F system_info)', status: 'MATCHED' },
-    { name: 'RULE 02: Network Socket Correlation', formula: 'H (procs <-> conns)', status: 'MATCHED' },
-    { name: 'RULE 03: Anomalous Privilege Escalation', formula: 'G (users.privilege == "root")', status: 'NO_MATCH' },
-  ];
+  const hasRealData = lastResult && lastResult.success && lastResult.data;
+  const executionData = hasRealData ? lastResult.data : null;
 
   return (
     <div className="stix-page">
@@ -54,7 +23,9 @@ export default function DetectionStixPage() {
 
         <div className="banner-actions">
           <span className="badge badge-info">STIX 2.1 SPECIFICATION</span>
-          <span className="badge badge-warning">BACKEND API: DEMO</span>
+          <span className={`badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
+            {cmiConnected ? 'CMI API: CONNECTED' : 'CMI API: OFFLINE'}
+          </span>
         </div>
       </div>
 
@@ -68,18 +39,11 @@ export default function DetectionStixPage() {
             </div>
           </div>
           <div className="panel-body">
-            <div className="rule-list">
-              {pltlRules.map((rule, idx) => (
-                <div key={idx} className="rule-card">
-                  <div className="rule-top">
-                    <span className="rule-name">{rule.name}</span>
-                    <span className={`badge ${rule.status === 'MATCHED' ? 'badge-emerald' : 'badge-amber'}`}>
-                      {rule.status}
-                    </span>
-                  </div>
-                  <div className="rule-formula">{rule.formula}</div>
-                </div>
-              ))}
+            <div className="unexposed-box badge badge-warning">
+              <AlertTriangle size={13} />
+              <span>
+                PLTL rule query endpoint not exposed by current CMI API. Rules are processed internally during backend execution.
+              </span>
             </div>
           </div>
         </div>
@@ -92,36 +56,50 @@ export default function DetectionStixPage() {
                 className={`tab-btn ${viewMode === 'objects' ? 'active' : ''}`}
                 onClick={() => setViewMode('objects')}
               >
-                <GitCommit size={12} /> STIX Domain Objects (SDOs)
+                <GitCommit size={12} /> STIX 2.1 Bundle Details
               </button>
               <button 
                 className={`tab-btn ${viewMode === 'json' ? 'active' : ''}`}
                 onClick={() => setViewMode('json')}
               >
-                <FileCode size={12} /> Raw STIX 2.1 JSON
+                <FileCode size={12} /> Raw CMI Result JSON
               </button>
             </div>
           </div>
 
           <div className="panel-body">
             {viewMode === 'objects' ? (
-              <div className="stix-objects-list">
-                {mockStixBundle.objects.map((obj, idx) => (
-                  <div key={idx} className="stix-obj-card">
+              <div className="stix-objects-list font-mono">
+                {hasRealData ? (
+                  <div className="stix-obj-card">
                     <div className="obj-header">
-                      <span className="badge badge-info">{obj.type.toUpperCase()}</span>
-                      <span className="obj-id">{obj.id}</span>
+                      <span className="badge badge-info">STIX BUNDLE</span>
+                      <span className="obj-id">{executionData.stix_bundle}</span>
                     </div>
                     <div className="obj-body">
-                      {obj.name && <div><strong>Name:</strong> {obj.name}</div>}
-                      {obj.pattern && <div><strong>Pattern:</strong> <code>{obj.pattern}</code></div>}
-                      {obj.valid_from && <div><strong>Valid From:</strong> {obj.valid_from}</div>}
+                      <div><strong>Investigation ID:</strong> {executionData.investigation_id}</div>
+                      <div><strong>Target Platform:</strong> {executionData.target_platform}</div>
+                      <div><strong>Status:</strong> {executionData.status}</div>
+                      <div><strong>STIX File Path:</strong> {executionData.stix_bundle}</div>
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <div className="empty-state font-mono">
+                    <p>[!] No STIX bundle generated in current session.</p>
+                    <p>Run an investigation from the Workbench (POST /api/v1/orchestrate) to generate a STIX 2.1 bundle.</p>
+                  </div>
+                )}
               </div>
             ) : (
-              <pre className="json-pre">{JSON.stringify(mockStixBundle, null, 2)}</pre>
+              <div className="raw-view font-mono">
+                {hasRealData ? (
+                  <pre className="json-pre">{JSON.stringify(executionData, null, 2)}</pre>
+                ) : (
+                  <div className="empty-state">
+                    <p>[!] No CMI result data recorded.</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -171,37 +149,13 @@ export default function DetectionStixPage() {
         .flex-1 { flex: 1; }
         .flex-2 { flex: 2; }
 
-        .rule-list {
+        .unexposed-box {
           display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .rule-card {
-          padding: 8px;
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-        }
-
-        .rule-top {
-          display: flex;
-          justify-content: space-between;
           align-items: center;
-          margin-bottom: 4px;
-        }
-
-        .rule-name {
+          gap: 6px;
+          padding: 8px 10px;
           font-size: 10.5px;
-          font-weight: 700;
-          color: var(--text-primary);
-        }
-
-        .rule-formula {
-          font-size: 9.5px;
           color: var(--text-secondary);
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          padding: 3px 6px;
         }
 
         .panel-tabs {
@@ -268,6 +222,13 @@ export default function DetectionStixPage() {
           font-size: 10.5px;
           max-height: 280px;
           overflow-y: auto;
+        }
+
+        .empty-state {
+          padding: 20px;
+          text-align: center;
+          color: var(--text-muted);
+          font-size: 11px;
         }
       `}</style>
     </div>
