@@ -7,10 +7,12 @@ import ResultSummaryCard from '../components/workbench/ResultSummaryCard';
 
 import { orchestrateInvestigation } from '../utils/cmiClient';
 
-export default function WorkbenchPage({ 
-  targetPlatform, 
-  onPlatformChange, 
-  preset, 
+const BACKEND_STAGES = ['compiler', 'obfuscator', 'runtime', 'sealing', 'stix'];
+
+export default function WorkbenchPage({
+  targetPlatform,
+  onPlatformChange,
+  preset,
   onPresetChange,
   cmiConnected,
   onOrchestrationComplete,
@@ -22,8 +24,8 @@ export default function WorkbenchPage({
     collect network_connections as conns
     collect auth_logs as auth
 
-    correlate procs, sys
-    correlate procs, conns
+    correlate procs with sys
+    correlate procs with conns
 
     emit evidence
 }`);
@@ -32,7 +34,7 @@ export default function WorkbenchPage({
   const [operatorId, setOperatorId] = useState('local-operator');
   const [evidenceFormat, setEvidenceFormat] = useState('Canonical + STIX');
   const [sealIntegrity, setSealIntegrity] = useState(true);
-  
+
   const [activeCapabilities, setActiveCapabilities] = useState([
     'process_list', 'system_info', 'network_connections', 'auth_logs'
   ]);
@@ -40,6 +42,12 @@ export default function WorkbenchPage({
   const [preflightResults, setPreflightResults] = useState(null);
   const [isOrchestrating, setIsOrchestrating] = useState(false);
   const [orchestrationResult, setOrchestrationResult] = useState(lastResult || null);
+
+  const [pipelineStages, setPipelineStages] = useState(
+    BACKEND_STAGES.map(id => ({ id, status: 'idle' }))
+  );
+  const [pipelineProgress, setPipelineProgress] = useState(0);
+  const [currentActivity, setCurrentActivity] = useState('');
 
   const handleToggleCapability = (capId) => {
     if (activeCapabilities.includes(capId)) {
@@ -52,6 +60,7 @@ export default function WorkbenchPage({
   const handleRunPreflight = () => {
     const hasInvestigation = jockySource.includes('investigation') && jockySource.includes('{');
     const hasEmit = jockySource.includes('emit evidence');
+    const hasCorrelateWith = !jockySource.match(/correlate\s+\w+\s*,/) || jockySource.includes('with');
     const validSyntax = hasInvestigation && hasEmit;
 
     const checks = [
@@ -59,6 +68,11 @@ export default function WorkbenchPage({
         name: 'Jocky DSL Syntax',
         status: validSyntax ? 'PASS' : 'BLOCK',
         detail: validSyntax ? 'Investigation block and emit statement parsed.' : 'Syntax Error: Missing investigation block or emit statement.',
+      },
+      {
+        name: 'Correlate Syntax',
+        status: hasCorrelateWith ? 'PASS' : 'WARN',
+        detail: hasCorrelateWith ? 'Correlate uses correct "with" keyword.' : 'Warning: correlate requires "correlate X with Y" syntax (not comma-separated).',
       },
       {
         name: 'Backend Endpoint Contract',
@@ -73,7 +87,7 @@ export default function WorkbenchPage({
       {
         name: 'CMI Backend Connection',
         status: cmiConnected ? 'PASS' : 'WARN',
-        detail: cmiConnected ? 'CMI Backend is LIVE at http://localhost:8000.' : 'CMI Backend is OFFLINE. Run python -m uvicorn cmi.server:app --port 8000',
+        detail: cmiConnected ? 'CMI Backend is LIVE at http://localhost:8000.' : 'CMI Backend is OFFLINE. Run: python -m uvicorn cmi.server:app --port 8000',
       },
     ];
 
@@ -81,13 +95,58 @@ export default function WorkbenchPage({
   };
 
   const handleRunInvestigation = async () => {
-    if (isOrchestrating) return; // Prevent duplicate requests
+    if (isOrchestrating) return;
 
     setIsOrchestrating(true);
-    // Send EXACT live Jocky DSL source code from editor state
-    const result = await orchestrateInvestigation(jockySource, targetPlatform);
-    setIsOrchestrating(false);
+    setOrchestrationResult(null);
+    
+    // Set initial loading state awaiting backend
+    setPipelineStages(BACKEND_STAGES.map((id, index) => ({ 
+      id, 
+      status: index === 0 ? 'running' : 'idle' 
+    })));
+    setPipelineProgress(5); // Show minor progress to indicate start
+    setCurrentActivity('Awaiting backend execution...');
 
+    const result = await orchestrateInvestigation(jockySource, targetPlatform);
+    
+    // Extract actual stages returned from backend
+    const returnedStages = result.success ? result.data?.pipeline_stages : result.pipelineStages;
+
+    if (returnedStages && returnedStages.length > 0) {
+      // Map backend structured responses directly into UI state
+      const mappedStages = returnedStages.map(s => {
+        let uiStatus = 'idle';
+        if (s.status === 'success') uiStatus = 'completed';
+        if (s.status === 'failed') uiStatus = 'failed';
+        if (s.status === 'skipped') uiStatus = 'blocked';
+
+        return { 
+          id: s.stage, 
+          status: uiStatus, 
+          output: s.output, 
+          duration: s.duration 
+        };
+      });
+
+      setPipelineStages(mappedStages);
+
+      const successCount = returnedStages.filter(s => s.status === 'success').length;
+      setPipelineProgress(Math.round((successCount / returnedStages.length) * 100));
+
+      if (result.success) {
+        setCurrentActivity('Investigation completed successfully.');
+      } else {
+        setCurrentActivity(`Pipeline failed at stage: ${result.stage}`);
+      }
+    } else {
+      // Fallback for network timeouts or total backend failure
+      setPipelineStages(BACKEND_STAGES.map(id => ({ id, status: 'failed' })));
+      setPipelineProgress(0);
+      setCurrentActivity(`Execution Error: ${result.error}`);
+    }
+
+    setIsOrchestrating(false);
     setOrchestrationResult(result);
     if (onOrchestrationComplete) {
       onOrchestrationComplete(result);
@@ -128,26 +187,28 @@ export default function WorkbenchPage({
         </div>
       </div>
 
-      {/* Result Summary Section */}
-      <ResultSummaryCard 
-        result={orchestrationResult} 
-        isOrchestrating={isOrchestrating} 
+      {/* Pipeline Execution Visual */}
+      <PipelineStatusPanel
+        cmiConnected={cmiConnected}
+        isOrchestrating={isOrchestrating}
+        orchestrationResult={orchestrationResult}
+        onTriggerOrchestration={handleRunInvestigation}
+        pipelineStages={pipelineStages}
+        pipelineProgress={pipelineProgress}
+        currentActivity={currentActivity}
       />
 
-      {/* Bottom Grid: Preflight Diagnostics + Pipeline Flow */}
-      <div className="workbench-bottom-grid">
-        <PreflightDiagnosticsPanel
-          preflightResults={preflightResults}
-          onRunCheck={handleRunPreflight}
-        />
+      {/* Result Summary Section */}
+      <ResultSummaryCard
+        result={orchestrationResult}
+        isOrchestrating={isOrchestrating}
+      />
 
-        <PipelineStatusPanel
-          cmiConnected={cmiConnected}
-          isOrchestrating={isOrchestrating}
-          orchestrationResult={orchestrationResult}
-          onTriggerOrchestration={handleRunInvestigation}
-        />
-      </div>
+      {/* Preflight Diagnostics */}
+      <PreflightDiagnosticsPanel
+        preflightResults={preflightResults}
+        onRunCheck={handleRunPreflight}
+      />
 
       <style>{`
         .workbench-page {
@@ -161,16 +222,11 @@ export default function WorkbenchPage({
           gap: 12px;
         }
 
-        .workbench-bottom-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
         .grid-col { display: flex; flex-direction: column; }
         .flex-3 { flex: 3; }
         .flex-2 { flex: 2; }
-      `}</style>
+      `}
+      </style>
     </div>
   );
 }
