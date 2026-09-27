@@ -5,15 +5,19 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/openapi.json': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
+  proxy: {
+    '/api': {
+      target: 'http://localhost:8000',
+      changeOrigin: true,
+    },
+    '/health': {
+      target: 'http://localhost:8000',
+      changeOrigin: true,
+    },
+    '/openapi.json': {
+      target: 'http://localhost:8000',
+      changeOrigin: true,
     },
   },
+},  
 })

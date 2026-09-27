@@ -1,406 +1,524 @@
-import { GitCommit, ShieldCheck, FileText, Cpu, Lock, Terminal, Radio, Loader2, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import {
+  GitCommit,
+  ShieldCheck,
+  FileText,
+  Cpu,
+  Lock,
+  Terminal,
+  Radio,
+  Loader2,
+  AlertTriangle,
+  Check,
+  Circle,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-react';
 
-const PIPELINE_STAGES = [
-  { id: 'source', name: 'Jocky Source', icon: Terminal, desc: 'DSL Script Authoring' },
-  { id: 'compiler', name: 'Python Compiler', icon: Cpu, desc: 'AST & Semantic Validation' },
-  { id: 'ir', name: 'Forensic IR', icon: FileText, desc: 'Contract JSON Lowering' },
-  { id: 'payload', name: 'Payload Encapsulation', icon: Lock, desc: 'Polymorphic .enc Packaging' },
-  { id: 'runtime', name: 'Native C++ Runtime', icon: Cpu, desc: './build/odin-run Execution' },
-  { id: 'provider', name: 'Native Provider', icon: Radio, desc: 'OS Dispatcher (Linux/Win)' },
-  { id: 'evidence', name: 'Raw Evidence', icon: FileText, desc: 'Collected System Artifacts' },
-  { id: 'sealing', name: 'Evidence Sealing', icon: ShieldCheck, desc: 'SHA-256 Custody Hash' },
-  { id: 'stix', name: 'STIX 2.1 Engine', icon: GitCommit, desc: 'Threat Intelligence Bundle' },
+const PIPELINE_STAGE_META = [
+  { id: 'compiler', name: 'Jocky Compiler (IR)', icon: Terminal, desc: 'Lexer & Parser tokenization' },
+  { id: 'obfuscator', name: 'Polymorphic Encryption', icon: Lock, desc: 'Encrypted .enc payload generation' },
+  { id: 'runtime', name: 'Native C++ Runtime', icon: Cpu, desc: 'Linux Provider execution' },
+  { id: 'sealing', name: 'Evidence Sealing', icon: ShieldCheck, desc: 'SHA-256 cryptographic seal' },
+  { id: 'stix', name: 'STIX 2.1 Generation', icon: GitCommit, desc: 'Threat intelligence bundle' },
 ];
 
-export default function PipelineStatusPanel({ 
-  cmiConnected, 
-  isOrchestrating, 
-  orchestrationResult, 
-  onTriggerOrchestration 
+export default function PipelineStatusPanel({
+  cmiConnected,
+  isOrchestrating,
+  orchestrationResult,
+  onTriggerOrchestration,
+  pipelineStages = [],
+  pipelineProgress = 0,
+  currentActivity = '',
 }) {
-  const getStageStatus = (stageId, index) => {
-    if (isOrchestrating) {
-      return { 
-        status: 'running', 
-        label: 'RUNNING...', 
-        colorClass: 'status-running', 
-        badgeClass: 'badge-warning',
-      };
-    }
+  const [expanded, setExpanded] = useState(true);
 
-    if (!orchestrationResult) {
-      return { 
-        status: 'ready', 
-        label: 'READY', 
-        colorClass: 'status-ready', 
-        badgeClass: 'badge-muted',
-      };
-    }
+  const getStatusForStage = (stageId) => {
+    const match = pipelineStages.find(s => s.id === stageId);
+    return match ? match.status : 'idle';
+  };
 
-    if (orchestrationResult.success) {
-      return { 
-        status: 'completed', 
-        label: 'COMPLETED', 
-        colorClass: 'status-completed', 
-        badgeClass: 'badge-emerald',
-      };
-    }
-
-    // Execution failed
-    const failedStageStr = String(orchestrationResult.stage || '').toLowerCase();
-    let failedIdx = 4; // default to runtime (odin-run / executable_lookup)
-    if (failedStageStr.includes('compiler')) {
-      failedIdx = 1;
-    } else if (failedStageStr.includes('sealing')) {
-      failedIdx = 7;
-    } else if (failedStageStr.includes('detection') || failedStageStr.includes('stix')) {
-      failedIdx = 8;
-    } else if (failedStageStr.includes('runtime') || failedStageStr.includes('odin-run') || failedStageStr.includes('executable_lookup')) {
-      failedIdx = 4;
-    }
-
-    if (index < failedIdx) {
-      return { 
-        status: 'completed', 
-        label: 'COMPLETED', 
-        colorClass: 'status-completed', 
-        badgeClass: 'badge-emerald',
-      };
-    } else if (index === failedIdx) {
-      return { 
-        status: 'failed', 
-        label: 'FAILED HERE', 
-        colorClass: 'status-failed', 
-        badgeClass: 'badge-error',
-      };
-    } else {
-      return { 
-        status: 'blocked', 
-        label: 'BLOCKED', 
-        colorClass: 'status-blocked', 
-        badgeClass: 'badge-muted',
-      };
+  const renderStageIcon = (status) => {
+    switch (status) {
+      case 'completed':
+        return <Check size={11} />;
+      case 'running':
+        return <Loader2 size={11} className="spin" />;
+      case 'failed':
+        return <AlertTriangle size={11} />;
+      case 'blocked':
+        return <Circle size={9} />;
+      default:
+        return <Circle size={9} />;
     }
   };
 
+  const getStageClass = (status) => {
+    switch (status) {
+      case 'completed': return 'stage-completed';
+      case 'running': return 'stage-running';
+      case 'failed': return 'stage-failed';
+      case 'blocked': return 'stage-blocked';
+      default: return 'stage-idle';
+    }
+  };
+
+  const getStatusChar = (status) => {
+    switch (status) {
+      case 'completed': return '✓';
+      case 'running': return '●';
+      case 'failed': return '✗';
+      default: return '○';
+    }
+  };
+
+  const progressBarFill = Math.min(pipelineProgress, 100);
+  const progressBlocks = Math.floor(progressBarFill / 5);
+  const progressEmpty = 20 - progressBlocks;
+  const progressBar = '█'.repeat(progressBlocks) + '░'.repeat(progressEmpty);
+
+  const hasResult = !!orchestrationResult && !isOrchestrating;
+  const isSuccess = hasResult && orchestrationResult.success;
+  
+  // Extract data based on success vs failure payload structures
+  const resultData = isSuccess ? orchestrationResult.data : null;
+  const telemetry = resultData?.telemetry;
+
   return (
-    <div className="panel-card pipeline-card">
+    <div className="panel-card pipeline-visual-card">
       <div className="panel-header">
         <div className="panel-title">
           <GitCommit size={14} />
-          <span>Mahoraga Pipeline Status & Execution Flow</span>
+          <span>INVESTIGATION PIPELINE</span>
         </div>
-        
-        <div className="header-actions">
+
+        <div className="pipeline-header-actions">
           <span className={`badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
-            {cmiConnected ? 'CMI API: CONNECTED' : 'CMI API: OFFLINE'}
+            {cmiConnected ? 'CMI: LIVE' : 'CMI: OFFLINE'}
           </span>
-          <button 
+          <button
             className="btn btn-primary"
             onClick={onTriggerOrchestration}
             disabled={isOrchestrating}
           >
             {isOrchestrating ? <Loader2 size={12} className="spin" /> : <GitCommit size={12} />}
-            {isOrchestrating ? 'Orchestrating...' : 'Run Investigation'}
+            {isOrchestrating ? 'Executing...' : '⚡ Compile & Execute'}
           </button>
         </div>
       </div>
 
       <div className="panel-body">
-        {/* Vertical Pipeline Stage Flow */}
-        <div className="vertical-pipeline-container font-mono">
-          {PIPELINE_STAGES.map((stage, idx) => {
-            const Icon = stage.icon;
-            const statusInfo = getStageStatus(stage.id, idx);
-            const isLast = idx === PIPELINE_STAGES.length - 1;
-            const isFailed = statusInfo.status === 'failed';
-
+        {/* ─── Pipeline Checklist ─── */}
+        <div className="pipeline-checklist font-mono">
+          <div className="checklist-header">INVESTIGATION PIPELINE</div>
+          {PIPELINE_STAGE_META.map((meta) => {
+            const status = getStatusForStage(meta.id);
             return (
-              <div 
-                key={stage.id} 
-                className={`pipeline-step-item ${isFailed ? 'step-item-failed' : ''}`}
-              >
-                {/* Timeline Column with Icon Node and Vertical Line */}
-                <div className="step-timeline-col">
-                  <div className={`step-node-icon ${statusInfo.colorClass}`}>
-                    {statusInfo.status === 'running' ? (
-                      <Loader2 size={12} className="spin" />
-                    ) : statusInfo.status === 'failed' ? (
-                      <AlertTriangle size={12} />
-                    ) : (
-                      <Icon size={12} />
-                    )}
-                  </div>
-                  {!isLast && (
-                    <div className={`step-vertical-line line-${statusInfo.status}`} />
-                  )}
-                </div>
-
-                {/* Content Column */}
-                <div className="step-content-box">
-                  <div className="step-header-row">
-                    <div className="step-title-group">
-                      <span className="step-num">STAGE 0{idx + 1}</span>
-                      <span className="step-name">{stage.name}</span>
-                      <span className="step-desc-inline">— {stage.desc}</span>
-                    </div>
-                    <span className={`badge ${statusInfo.badgeClass}`}>
-                      {statusInfo.label}
-                    </span>
-                  </div>
-
-                  {isFailed && (
-                    <div className="failed-stage-notice">
-                      <span>Execution halted: {orchestrationResult?.error || 'Native runtime error'}</span>
-                    </div>
-                  )}
-                </div>
+              <div key={meta.id} className={`checklist-row ${getStageClass(status)}`}>
+                <span className="checklist-icon">
+                  {renderStageIcon(status)}
+                </span>
+                <span className="checklist-char">{getStatusChar(status)}</span>
+                <span className="checklist-name">{meta.name}</span>
+                {status === 'running' && (
+                  <span className="checklist-activity">…</span>
+                )}
+                {status === 'failed' && (
+                  <span className="checklist-fail-tag">HALT</span>
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* Execution Log Output */}
-        <div className="execution-log-box font-mono">
-          <div className="log-header">
-            <span>PIPELINE CONSOLE LOGS</span>
-            <span className="status-tag">
-              Target Route: POST /api/v1/orchestrate
-            </span>
-          </div>
-          <div className="log-content">
-            {isOrchestrating ? (
-              <div className="log-loading">
-                <Loader2 size={14} className="spin" />
-                <span>[1/5] Sending orchestration request to CMI backend (POST /api/v1/orchestrate)...</span>
-              </div>
-            ) : orchestrationResult ? (
-              orchestrationResult.success ? (
-                <div className="log-success">
-                  <p className="text-success">[+] Investigation Pipeline Completed Successfully!</p>
-                  <p>[+] Status: {orchestrationResult.data.status}</p>
-                  <p>[+] Investigation ID: {orchestrationResult.data.investigation_id}</p>
-                  <p>[+] Target Platform: {orchestrationResult.data.target_platform}</p>
-                  <p>[+] Sealed Evidence: {orchestrationResult.data.sealed_evidence}</p>
-                  <p>[+] STIX Bundle: {orchestrationResult.data.stix_bundle}</p>
+        {/* ─── Progress Bar ─── */}
+        {(isOrchestrating || pipelineProgress > 0) && (
+          <div className="execution-progress font-mono">
+            <div className="progress-header">JOCKY EXECUTION</div>
+            <div className="progress-bar-row">
+              <span className="progress-bar-visual">[{progressBar}]</span>
+              <span className="progress-pct">{pipelineProgress}%</span>
+            </div>
+            <div className="progress-activity">{currentActivity}</div>
+
+            {/* Live telemetry during/after execution */}
+            {telemetry && (
+              <div className="live-telemetry">
+                <div className="telemetry-row">
+                  <span className="telem-key">Provider</span>
+                  <span className="telem-val">{resultData?.target_platform?.toLowerCase() || 'linux'}-x86_64</span>
                 </div>
-              ) : (
-                <div className="log-error">
-                  <p className="text-error">[!] Backend Execution Failed (HTTP 500 / Process Error)</p>
-                  <p>[!] Error: {orchestrationResult.error}</p>
-                  {orchestrationResult.stage && <p>[!] Failed Stage Command: {JSON.stringify(orchestrationResult.stage)}</p>}
-                  {orchestrationResult.investigationId && <p>[!] Investigation ID: {orchestrationResult.investigationId}</p>}
-                </div>
-              )
-            ) : (
-              <div className="log-placeholder">
-                <p>[+] Pipeline ready.</p>
-                <p>[+] Target CMI Backend: {cmiConnected ? 'ONLINE (http://localhost:8000)' : 'OFFLINE'}</p>
-                {!cmiConnected && (
-                  <p className="text-warning">[!] CMI backend is offline. Run backend server: python -m uvicorn cmi.server:app --port 8000</p>
+                {telemetry.capabilities_used && telemetry.capabilities_used.length > 0 && (
+                  <div className="telemetry-row">
+                    <span className="telem-key">Capabilities</span>
+                    <span className="telem-val">{telemetry.capabilities_used.join(', ')}</span>
+                  </div>
                 )}
-                <p>[+] Click "Run Investigation" to execute DSL source against backend.</p>
+                <div className="telemetry-row">
+                  <span className="telem-key">Artifacts</span>
+                  <span className="telem-val">{telemetry.evidence?.artifacts_count || 0} sealed</span>
+                </div>
+                <div className="telemetry-row">
+                  <span className="telem-key">Integrity</span>
+                  <span className="telem-val">SHA-256</span>
+                </div>
+                {telemetry.encrypted_payload_bytes > 0 && (
+                  <div className="telemetry-row">
+                    <span className="telem-key">Payload</span>
+                    <span className="telem-val">{telemetry.encrypted_payload_bytes} bytes (.enc)</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
+        )}
+
+        {/* ─── Console Log ─── */}
+        <div className="pipeline-console font-mono">
+          <button className="console-toggle" onClick={() => setExpanded(!expanded)}>
+            {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            <span>PIPELINE CONSOLE</span>
+            <span className="console-route">POST /api/v1/orchestrate</span>
+          </button>
+
+          {expanded && (
+            <div className="console-body">
+              {isOrchestrating ? (
+                <div className="console-line active">
+                  <Loader2 size={11} className="spin" />
+                  <span>[1/5] Sending orchestration request to CMI backend...</span>
+                </div>
+              ) : hasResult ? (
+                <>
+                  {/* Map over the actual stage outputs returned by the backend */}
+                  {pipelineStages
+                    .filter(s => s.status === 'completed' || s.status === 'failed')
+                    .map((stage, i) => (
+                      <div key={i} className={`console-line ${stage.status === 'failed' ? 'error' : 'success'}`}>
+                        <span>[{stage.status === 'completed' ? '+' : '!'}] [{stage.id}] {stage.output || 'Execution finished'}</span>
+                        {stage.duration !== undefined && (
+                          <span className="muted" style={{marginLeft: 'auto'}}>
+                            {stage.duration}s
+                          </span>
+                        )}
+                      </div>
+                  ))}
+
+                  {isSuccess ? (
+                    <div className="console-line success highlight">
+                      <span>[✔] Pipeline completed. Investigation ID: {resultData.investigation_id}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="console-line error highlight">
+                        <span>[✗] Failed at stage: {orchestrationResult.stage}</span>
+                      </div>
+                      <div className="console-line error">
+                        <span>[!] {orchestrationResult.error}</span>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="console-line muted">
+                    <span>[+] Pipeline ready. Backend: {cmiConnected ? 'ONLINE' : 'OFFLINE'}</span>
+                  </div>
+                  {!cmiConnected && (
+                    <div className="console-line warn">
+                      <span>[!] Start backend: python -m uvicorn cmi.server:app --port 8000</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       <style>{`
-        .pipeline-card {
-          min-height: 440px;
+        .pipeline-visual-card {
+          min-height: 200px;
         }
 
-        .header-actions {
+        .pipeline-header-actions {
           display: flex;
           align-items: center;
           gap: 8px;
         }
 
-        .vertical-pipeline-container {
-          display: flex;
-          flex-direction: column;
+        /* ─── Checklist ─── */
+        .pipeline-checklist {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          padding: 8px 12px;
+          padding: 0;
           margin-bottom: 10px;
-          gap: 0px;
         }
 
-        .pipeline-step-item {
+        .checklist-header {
+          padding: 6px 12px;
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border-color);
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          color: var(--text-muted);
+        }
+
+        .checklist-row {
           display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          position: relative;
-          padding: 4px 6px;
-          border-radius: var(--radius-md);
-          background: transparent;
-          border: 1px solid transparent;
-        }
-
-        .step-item-failed {
-          background: rgba(255, 255, 255, 0.02);
-        }
-
-        .step-timeline-col {
-          display: flex;
-          flex-direction: column;
           align-items: center;
-          width: 22px;
-          min-width: 22px;
-          position: relative;
-          align-self: stretch;
+          gap: 8px;
+          padding: 5px 12px;
+          font-size: 11.5px;
+          border-bottom: 1px solid rgba(51, 51, 51, 0.4);
+          transition: background 0.2s ease;
         }
 
-        .step-node-icon {
-          width: 22px;
-          height: 22px;
-          border-radius: 0px;
+        .checklist-row:last-child {
+          border-bottom: none;
+        }
+
+        .checklist-icon {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: var(--bg-tertiary);
-          border: 1px solid var(--border-color);
-          color: var(--text-muted);
-          z-index: 2;
+          width: 18px;
+          height: 18px;
+          border-radius: 2px;
+          flex-shrink: 0;
         }
 
-        .status-completed {
-          background: rgba(56, 142, 60, 0.1);
-          border-color: var(--status-success);
-          color: var(--status-success);
+        .checklist-char {
+          width: 14px;
+          text-align: center;
+          font-size: 12px;
+          flex-shrink: 0;
         }
 
-        .status-failed {
-          background: rgba(211, 47, 47, 0.12);
-          border-color: var(--status-error);
-          color: var(--status-error);
+        .checklist-name {
+          flex: 1;
         }
 
-        .status-running {
-          background: rgba(245, 124, 0, 0.15);
-          border-color: var(--status-warning);
+        .checklist-activity {
           color: var(--status-warning);
+          font-size: 10px;
+          animation: blink 1s infinite;
         }
 
-        .status-ready, .status-blocked {
-          background: var(--bg-secondary);
-          border-color: var(--border-color);
-          color: var(--text-muted);
-        }
-
-        .step-vertical-line {
-          width: 1px;
-          flex: 1;
-          min-height: 14px;
-          background: var(--border-color);
-          margin-top: 1px;
-          margin-bottom: -3px;
-        }
-
-        .line-completed {
-          background: var(--status-success);
-        }
-
-        .line-running {
-          background: var(--status-warning);
-        }
-
-        .step-content-box {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
-          padding-bottom: 2px;
-        }
-
-        .step-header-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .step-title-group {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .step-num {
-          font-size: 9.5px;
+        .checklist-fail-tag {
+          font-size: 9px;
           font-weight: 700;
-          color: var(--text-muted);
+          color: var(--status-error);
+          background: rgba(211, 47, 47, 0.12);
+          padding: 1px 6px;
           letter-spacing: 0.5px;
         }
 
-        .step-name {
-          font-size: 11px;
-          font-weight: 600;
+        /* Stage status colors */
+        .stage-completed .checklist-icon {
+          color: var(--status-success);
+        }
+        .stage-completed .checklist-char {
+          color: var(--status-success);
+        }
+        .stage-completed .checklist-name {
           color: var(--text-primary);
         }
 
-        .step-desc-inline {
-          font-size: 10px;
+        .stage-running {
+          background: rgba(245, 124, 0, 0.06);
+        }
+        .stage-running .checklist-icon {
+          color: var(--status-warning);
+        }
+        .stage-running .checklist-char {
+          color: var(--status-warning);
+        }
+        .stage-running .checklist-name {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+
+        .stage-failed {
+          background: rgba(211, 47, 47, 0.06);
+        }
+        .stage-failed .checklist-icon {
+          color: var(--status-error);
+        }
+        .stage-failed .checklist-char {
+          color: var(--status-error);
+        }
+        .stage-failed .checklist-name {
+          color: var(--status-error);
+        }
+
+        .stage-idle .checklist-icon,
+        .stage-blocked .checklist-icon {
+          color: var(--text-muted);
+        }
+        .stage-idle .checklist-char,
+        .stage-blocked .checklist-char {
+          color: var(--text-muted);
+        }
+        .stage-idle .checklist-name,
+        .stage-blocked .checklist-name {
           color: var(--text-muted);
         }
 
-        .failed-stage-notice {
-          margin-top: 2px;
+        /* ─── Progress Bar ─── */
+        .execution-progress {
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          padding: 0;
+          margin-bottom: 10px;
+        }
+
+        .progress-header {
+          padding: 6px 12px;
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border-color);
           font-size: 10px;
-          color: var(--status-error);
+          font-weight: 700;
+          letter-spacing: 1px;
+          color: var(--text-muted);
+        }
+
+        .progress-bar-row {
+          padding: 10px 12px 4px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .progress-bar-visual {
+          font-size: 14px;
+          letter-spacing: 0px;
+          color: var(--status-success);
+          line-height: 1;
+        }
+
+        .progress-pct {
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .progress-activity {
+          padding: 4px 12px 8px;
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+
+        .live-telemetry {
+          padding: 0 12px 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          border-top: 1px solid var(--border-color);
+          padding-top: 8px;
+          margin-top: 4px;
+        }
+
+        .telemetry-row {
+          display: flex;
+          gap: 16px;
+          font-size: 11px;
+        }
+
+        .telem-key {
+          color: var(--text-muted);
+          min-width: 100px;
+          text-transform: capitalize;
+        }
+
+        .telem-val {
+          color: var(--text-primary);
           font-weight: 500;
         }
 
-        .badge-muted {
-          border-color: var(--border-color);
-          color: var(--text-muted);
-          background: var(--bg-secondary);
-        }
-
-        .execution-log-box {
+        /* ─── Console ─── */
+        .pipeline-console {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          overflow: hidden;
         }
 
-        .log-header {
-          padding: 5px 10px;
-          background: var(--bg-secondary);
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          justify-content: space-between;
-          font-size: 9.5px;
-          font-weight: 700;
-          color: var(--text-muted);
-        }
-
-        .log-content {
-          padding: 10px;
-          font-size: 10.5px;
-          color: var(--text-secondary);
-          line-height: 1.5;
-          max-height: 130px;
-          overflow-y: auto;
-        }
-
-        .log-placeholder p, .log-success p, .log-error p {
-          margin: 2px 0;
-        }
-
-        .log-loading {
+        .console-toggle {
+          width: 100%;
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
+          padding: 5px 10px;
+          background: var(--bg-secondary);
+          border: none;
+          border-bottom: 1px solid var(--border-color);
+          color: var(--text-muted);
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .console-toggle:hover {
           color: var(--text-primary);
         }
 
-        .text-success { color: var(--status-success); font-weight: 600; }
-        .text-error { color: var(--status-error); font-weight: 600; }
-        .text-warning { color: var(--status-warning); font-weight: 600; }
-        .text-muted { color: var(--text-muted); }
+        .console-route {
+          margin-left: auto;
+          color: var(--text-muted);
+          font-weight: 400;
+        }
+
+        .console-body {
+          padding: 8px 10px;
+          max-height: 160px;
+          overflow-y: auto;
+          font-size: 10.5px;
+          line-height: 1.6;
+        }
+
+        .console-line {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 1px 0;
+        }
+
+        .console-line.active {
+          color: var(--text-primary);
+        }
+
+        .console-line.success {
+          color: var(--text-secondary);
+        }
+
+        .console-line.success.highlight {
+          color: var(--status-success);
+          font-weight: 600;
+        }
+
+        .console-line.error {
+          color: var(--status-error);
+        }
+
+        .console-line.error.highlight {
+          font-weight: 600;
+        }
+
+        .console-line.warn {
+          color: var(--status-warning);
+        }
+
+        .console-line.muted {
+          color: var(--text-muted);
+        }
+
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
 
         .spin {
           animation: spin 1s linear infinite;
@@ -414,5 +532,3 @@ export default function PipelineStatusPanel({
     </div>
   );
 }
-
-

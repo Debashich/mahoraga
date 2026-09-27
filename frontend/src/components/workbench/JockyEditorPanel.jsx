@@ -8,8 +8,8 @@ const JOCKY_EXAMPLES = {
     collect network_connections as conns
     collect auth_logs as auth
 
-    correlate procs, sys
-    correlate procs, conns
+    correlate procs with sys
+    correlate procs with conns
 
     emit evidence
 }`,
@@ -18,7 +18,7 @@ const JOCKY_EXAMPLES = {
     collect file_metadata as files
     collect memory_snapshot as mem
 
-    correlate procs, files
+    correlate procs with files
 
     emit evidence
 }`,
@@ -27,7 +27,7 @@ const JOCKY_EXAMPLES = {
     collect users as local_users
     collect event_logs as events
 
-    correlate procs, local_users
+    correlate procs with local_users
 
     emit evidence
 }`,
