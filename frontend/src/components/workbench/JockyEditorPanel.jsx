@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Code2, Play, FileCode, PlusCircle, Check } from 'lucide-react';
+import { Code2, Play, FileCode, PlusCircle, Check, Loader2, GitCommit } from 'lucide-react';
 
 const JOCKY_EXAMPLES = {
   "host_sweep.jocky": `investigation "Host Sweep Investigation" {
@@ -44,7 +44,13 @@ const CAPABILITY_OPTIONS = [
   { id: 'driver_scan', alias: 'drivers', desc: 'Kernel driver module scan' },
 ];
 
-export default function JockyEditorPanel({ source, onChangeSource, onRunPreflight }) {
+export default function JockyEditorPanel({ 
+  source, 
+  onChangeSource, 
+  onRunPreflight, 
+  onRunInvestigation, 
+  isOrchestrating 
+}) {
   const [selectedExample, setSelectedExample] = useState('host_sweep.jocky');
   const [insertedFeedback, setInsertedFeedback] = useState('');
 
@@ -90,6 +96,7 @@ export default function JockyEditorPanel({ source, onChangeSource, onRunPrefligh
               className="select-mini"
               value={selectedExample}
               onChange={(e) => handleLoadExample(e.target.value)}
+              disabled={isOrchestrating}
             >
               <option value="host_sweep.jocky">host_sweep.jocky</option>
               <option value="hunt.jocky">hunt.jocky</option>
@@ -97,8 +104,17 @@ export default function JockyEditorPanel({ source, onChangeSource, onRunPrefligh
             </select>
           </div>
 
-          <button className="btn btn-primary" onClick={onRunPreflight}>
-            <Play size={12} /> Run Pre-Flight Check
+          <button className="btn" onClick={onRunPreflight} disabled={isOrchestrating}>
+            <Play size={12} /> Pre-Flight
+          </button>
+
+          <button 
+            className="btn btn-primary" 
+            onClick={onRunInvestigation} 
+            disabled={isOrchestrating}
+          >
+            {isOrchestrating ? <Loader2 size={12} className="spin" /> : <GitCommit size={12} />}
+            {isOrchestrating ? 'Running...' : 'Run Investigation'}
           </button>
         </div>
       </div>
@@ -112,6 +128,7 @@ export default function JockyEditorPanel({ source, onChangeSource, onRunPrefligh
               className="cap-chip"
               onClick={() => handleInsertCapability(cap)}
               title={cap.desc}
+              disabled={isOrchestrating}
             >
               <PlusCircle size={10} />
               <span>{cap.id}</span>
@@ -137,6 +154,7 @@ export default function JockyEditorPanel({ source, onChangeSource, onRunPrefligh
           onChange={(e) => onChangeSource(e.target.value)}
           placeholder="// Type Jocky DSL source code here..."
           spellCheck={false}
+          readOnly={isOrchestrating}
         />
       </div>
 
@@ -154,7 +172,7 @@ export default function JockyEditorPanel({ source, onChangeSource, onRunPrefligh
         .editor-actions {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
         }
 
         .example-selector {
@@ -218,9 +236,14 @@ export default function JockyEditorPanel({ source, onChangeSource, onRunPrefligh
           transition: border-color 0.15s ease;
         }
 
-        .cap-chip:hover {
+        .cap-chip:hover:not(:disabled) {
           border-color: var(--accent);
           color: var(--text-primary);
+        }
+
+        .cap-chip:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .feedback-tag {
@@ -282,6 +305,15 @@ export default function JockyEditorPanel({ source, onChangeSource, onRunPrefligh
 
         .lang-tag {
           color: var(--text-secondary);
+        }
+
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>

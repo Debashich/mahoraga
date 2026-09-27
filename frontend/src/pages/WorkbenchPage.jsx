@@ -3,6 +3,7 @@ import JockyEditorPanel from '../components/workbench/JockyEditorPanel';
 import InvestigationConfigPanel from '../components/workbench/InvestigationConfigPanel';
 import PreflightDiagnosticsPanel from '../components/workbench/PreflightDiagnosticsPanel';
 import PipelineStatusPanel from '../components/workbench/PipelineStatusPanel';
+import ResultSummaryCard from '../components/workbench/ResultSummaryCard';
 
 import { orchestrateInvestigation } from '../utils/cmiClient';
 
@@ -60,9 +61,9 @@ export default function WorkbenchPage({
         detail: validSyntax ? 'Investigation block and emit statement parsed.' : 'Syntax Error: Missing investigation block or emit statement.',
       },
       {
-        name: 'Dry-Run AST Lowering API',
-        status: 'WARN',
-        detail: 'Dry-run compile endpoint (/api/v1/compile) not exposed by CMI backend. Use POST /api/v1/orchestrate.',
+        name: 'Backend Endpoint Contract',
+        status: 'PASS',
+        detail: 'POST /api/v1/orchestrate accepts { jocky_source, target_platform } payload.',
       },
       {
         name: 'Provider Capability Contract',
@@ -74,18 +75,16 @@ export default function WorkbenchPage({
         status: cmiConnected ? 'PASS' : 'WARN',
         detail: cmiConnected ? 'CMI Backend is LIVE at http://localhost:8000.' : 'CMI Backend is OFFLINE. Run python -m uvicorn cmi.server:app --port 8000',
       },
-      {
-        name: 'Orchestration Route',
-        status: 'PASS',
-        detail: 'POST /api/v1/orchestrate endpoint exists on CMI backend.',
-      }
     ];
 
     setPreflightResults({ checks });
   };
 
-  const handleTriggerOrchestration = async () => {
+  const handleRunInvestigation = async () => {
+    if (isOrchestrating) return; // Prevent duplicate requests
+
     setIsOrchestrating(true);
+    // Send EXACT live Jocky DSL source code from editor state
     const result = await orchestrateInvestigation(jockySource, targetPlatform);
     setIsOrchestrating(false);
 
@@ -104,6 +103,8 @@ export default function WorkbenchPage({
             source={jockySource}
             onChangeSource={setJockySource}
             onRunPreflight={handleRunPreflight}
+            onRunInvestigation={handleRunInvestigation}
+            isOrchestrating={isOrchestrating}
           />
         </div>
 
@@ -127,19 +128,24 @@ export default function WorkbenchPage({
         </div>
       </div>
 
+      {/* Result Summary Section */}
+      <ResultSummaryCard 
+        result={orchestrationResult} 
+        isOrchestrating={isOrchestrating} 
+      />
+
       {/* Bottom Grid: Preflight Diagnostics + Pipeline Flow */}
       <div className="workbench-bottom-grid">
         <PreflightDiagnosticsPanel
           preflightResults={preflightResults}
           onRunCheck={handleRunPreflight}
-          cmiConnected={cmiConnected}
         />
 
         <PipelineStatusPanel
           cmiConnected={cmiConnected}
           isOrchestrating={isOrchestrating}
           orchestrationResult={orchestrationResult}
-          onTriggerOrchestration={handleTriggerOrchestration}
+          onTriggerOrchestration={handleRunInvestigation}
         />
       </div>
 
@@ -147,18 +153,18 @@ export default function WorkbenchPage({
         .workbench-page {
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 12px;
         }
 
         .workbench-top-grid {
           display: flex;
-          gap: 14px;
+          gap: 12px;
         }
 
         .workbench-bottom-grid {
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 12px;
         }
 
         .grid-col { display: flex; flex-direction: column; }
