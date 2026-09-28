@@ -23,7 +23,7 @@ export async function checkCmiHealth() {
 
     if (response.ok) {
       const data = await response.json();
-      return { connected: true, status: data.status || 'CONNECTED', url: API_BASE_URL || 'http://localhost:8000 (proxied)' };
+      return { connected: true, status: data.status || 'CONNECTED', url: API_BASE_URL || 'http://localhost:8000 (proxied)', hostOs: data.host_os || null };
     }
     return { connected: false, status: 'ERROR', error: `HTTP ${response.status}` };
   } catch {

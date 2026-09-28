@@ -27,20 +27,7 @@ nlohmann::json Dispatcher::dispatch(const nlohmann::json& instruction) {
         std::cout << "[Dispatcher] Executing collection: "
                   << op << "\n";
 
-        nlohmann::json data;
-#ifdef _WIN32
-        if (op == "process_list") {
-            data = WindowsProvider::collect_process_list();
-        } else if (op == "network_connections") {
-            data = WindowsProvider::collect_network_connections();
-        } else if (op == "system_info") {
-            data = WindowsProvider::collect_system_info();
-        } else {
-            data = m_provider->execute(op);
-        }
-#else
-        data = m_provider->execute(op);
-#endif
+        nlohmann::json data = m_provider->execute(op);
 
         return {
             {"canonical_type", "evidence_" + op},

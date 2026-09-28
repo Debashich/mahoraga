@@ -67,13 +67,12 @@ CAPABILITIES = {
 # service today. Anything requested outside this set is a real provider
 # diagnostic, not a UI toggle.
 LINUX_PROVIDER_SUPPORTED = {
-    "process_list", "system_info", "users", "network_connections",
-    "auth_logs", "file_metadata", "memory_snapshot", "driver_scan",
-    "kernel_callbacks", "registry_hives", "event_logs",
+    "process_list", "system_info", "users", "network_connections", "auth_logs",
 }
 
 WINDOWS_PROVIDER_SUPPORTED = {
-    "process_list", "network_connections", "system_info",
+    "process_list", "system_info", "users", "network_connections",
+    "auth_logs", "file_metadata", "driver_scan", "registry_hives",
 }
 
 PRESETS = {

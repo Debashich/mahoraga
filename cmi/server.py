@@ -32,7 +32,8 @@ class InvestigationRequest(BaseModel):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "CONNECTED", "engine": "Mahoraga CMI"}
+    host_os = "windows" if sys.platform == "win32" else "linux"
+    return {"status": "CONNECTED", "engine": "Mahoraga CMI", "host_os": host_os}
 
 
 @app.post("/api/v1/orchestrate")
@@ -54,13 +55,35 @@ async def orchestrate_investigation(req: InvestigationRequest):
 
     py = sys.executable
     pipeline_stages = []
+
+    # Resolve the native C++ runtime binary path based on the host OS.
+    # On Windows, search for .exe variants in common CMake output directories
+    # (matches the resolution order used by mahoraga.bat).
+    # On Linux, use the original Unix binary path.
+    if sys.platform == "win32":
+        runtime_candidates = [
+            os.path.join("build", "mahoraga-run.exe"),
+            os.path.join("build", "Release", "mahoraga-run.exe"),
+            os.path.join("build", "Debug", "mahoraga-run.exe"),
+        ]
+        runtime_binary = next(
+            (p for p in runtime_candidates if os.path.exists(p)),
+            runtime_candidates[0]  # fallback to default path for error reporting
+        )
+    else:
+        runtime_binary = "./build/mahoraga-run" if os.path.exists("./build/mahoraga-run") else "./build/odin-run"
+
+    # Pass target_platform to child processes via environment so downstream
+    # stages (evidence sealing) can tag artifacts with the correct provider.
+    child_env = os.environ.copy()
+    child_env["MAHORAGA_TARGET_PLATFORM"] = req.target_platform
     
     # 1. Define the full structured pipeline graph upfront 
     # This guarantees 'truthful structured stages' even if a stage is skipped or aborted.
     stages_config = [
         {"name": "compiler", "cmd": [py, "-m", "compiler", "compile", jocky_file, "--out", contract_file]},
         {"name": "obfuscator", "cmd": [py, "-m", "compiler.obfuscator", contract_file, enc_file]},
-        {"name": "runtime", "cmd": ["./build/mahoraga-run" if os.path.exists("./build/mahoraga-run") else "./build/odin-run", enc_file]},
+        {"name": "runtime", "cmd": [runtime_binary, enc_file]},
         {"name": "sealing", "cmd": [py, "-m", "evidence.sealing", raw_ev_file, sealed_ev_file]},
         {"name": "stix", "cmd": [py, "-m", "detection.engine", contract_file, sealed_ev_file, stix_file]}
     ]
@@ -87,7 +110,7 @@ async def orchestrate_investigation(req: InvestigationRequest):
             
         t0 = time.time()
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=child_env)
             elapsed = round(time.time() - t0, 3)
             stage_telemetry["status"] = "success"
             stage_telemetry["duration"] = elapsed
