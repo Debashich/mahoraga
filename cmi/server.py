@@ -2,9 +2,11 @@
 Mahoraga CMI Backend Server
 Executes the full Jocky compiler pipeline and returns rich telemetry.
 """
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
 import subprocess
 import uuid
 import os
@@ -12,9 +14,12 @@ import sys
 import json
 import hashlib
 import time
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+
 app = FastAPI(title="Mahoraga CMI - Jocky DSL Engine")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,11 +35,95 @@ class InvestigationRequest(BaseModel):
     target_platform: str
 
 
+# ---------------------------------------------------------------------------
+# Project paths
+# ---------------------------------------------------------------------------
+
+# cmi/server.py -> project root -> examples/
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+EXAMPLES_DIR = PROJECT_ROOT / "examples"
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
 async def health_check():
     host_os = "windows" if sys.platform == "win32" else "linux"
-    return {"status": "CONNECTED", "engine": "Mahoraga CMI", "host_os": host_os}
 
+    return {
+        "status": "CONNECTED",
+        "engine": "Mahoraga CMI",
+        "host_os": host_os,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Jocky Examples API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/examples")
+async def list_examples():
+    """
+    Return all .jocky example files from the project's examples/ directory.
+    """
+
+    if not EXAMPLES_DIR.exists():
+        return {
+            "files": [],
+        }
+
+    files = sorted(
+        file.name
+        for file in EXAMPLES_DIR.iterdir()
+        if file.is_file() and file.suffix.lower() == ".jocky"
+    )
+
+    return {
+        "files": files,
+    }
+
+
+@app.get("/api/v1/examples/{filename}")
+async def get_example(filename: str):
+    """
+    Return the contents of a specific .jocky example file.
+    """
+
+    # Only allow filenames directly inside examples/.
+    # This prevents paths such as ../../some-file.
+    file_path = (EXAMPLES_DIR / filename).resolve()
+
+    if file_path.parent != EXAMPLES_DIR.resolve():
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid example filename.",
+        )
+
+    if not file_path.is_file() or file_path.suffix.lower() != ".jocky":
+        raise HTTPException(
+            status_code=404,
+            detail="Jocky example not found.",
+        )
+
+    try:
+        source = file_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read example: {exc}",
+        )
+
+    return {
+        "filename": file_path.name,
+        "source": source,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Investigation Orchestration
+# ---------------------------------------------------------------------------
 
 @app.post("/api/v1/orchestrate")
 async def orchestrate_investigation(req: InvestigationRequest):
@@ -50,161 +139,310 @@ async def orchestrate_investigation(req: InvestigationRequest):
     sealed_ev_file = f"out/evidence/{inv_id}_sealed.json"
     stix_file = f"out/evidence/{inv_id}_stix.json"
 
-    with open(jocky_file, "w") as f:
+    with open(jocky_file, "w", encoding="utf-8") as f:
         f.write(req.jocky_source)
 
     py = sys.executable
     pipeline_stages = []
 
-    # Resolve the native C++ runtime binary path based on the host OS.
-    # On Windows, search for .exe variants in common CMake output directories
-    # (matches the resolution order used by mahoraga.bat).
-    # On Linux, use the original Unix binary path.
+    # -----------------------------------------------------------------------
+    # Resolve native C++ runtime binary
+    # -----------------------------------------------------------------------
+
+    # On Windows, search for .exe variants in common CMake output
+    # directories.
+    #
+    # On Linux, preserve the original Unix binary path.
     if sys.platform == "win32":
         runtime_candidates = [
             os.path.join("build", "mahoraga-run.exe"),
             os.path.join("build", "Release", "mahoraga-run.exe"),
             os.path.join("build", "Debug", "mahoraga-run.exe"),
         ]
-        runtime_binary = next(
-            (p for p in runtime_candidates if os.path.exists(p)),
-            runtime_candidates[0]  # fallback to default path for error reporting
-        )
-    else:
-        runtime_binary = "./build/mahoraga-run" if os.path.exists("./build/mahoraga-run") else "./build/odin-run"
 
-    # Pass target_platform to child processes via environment so downstream
-    # stages (evidence sealing) can tag artifacts with the correct provider.
+        runtime_binary = next(
+            (
+                path
+                for path in runtime_candidates
+                if os.path.exists(path)
+            ),
+            runtime_candidates[0],
+        )
+
+    else:
+        runtime_binary = (
+            "./build/mahoraga-run"
+            if os.path.exists("./build/mahoraga-run")
+            else "./build/odin-run"
+        )
+
+    # -----------------------------------------------------------------------
+    # Child process environment
+    # -----------------------------------------------------------------------
+
     child_env = os.environ.copy()
     child_env["MAHORAGA_TARGET_PLATFORM"] = req.target_platform
-    
-    # 1. Define the full structured pipeline graph upfront 
-    # This guarantees 'truthful structured stages' even if a stage is skipped or aborted.
+
+    # -----------------------------------------------------------------------
+    # Full structured pipeline
+    # -----------------------------------------------------------------------
+
     stages_config = [
-        {"name": "compiler", "cmd": [py, "-m", "compiler", "compile", jocky_file, "--out", contract_file]},
-        {"name": "obfuscator", "cmd": [py, "-m", "compiler.obfuscator", contract_file, enc_file]},
-        {"name": "runtime", "cmd": [runtime_binary, enc_file]},
-        {"name": "sealing", "cmd": [py, "-m", "evidence.sealing", raw_ev_file, sealed_ev_file]},
-        {"name": "stix", "cmd": [py, "-m", "detection.engine", contract_file, sealed_ev_file, stix_file]}
+        {
+            "name": "compiler",
+            "cmd": [
+                py,
+                "-m",
+                "compiler",
+                "compile",
+                jocky_file,
+                "--out",
+                contract_file,
+            ],
+        },
+        {
+            "name": "obfuscator",
+            "cmd": [
+                py,
+                "-m",
+                "compiler.obfuscator",
+                contract_file,
+                enc_file,
+            ],
+        },
+        {
+            "name": "runtime",
+            "cmd": [
+                runtime_binary,
+                enc_file,
+            ],
+        },
+        {
+            "name": "sealing",
+            "cmd": [
+                py,
+                "-m",
+                "evidence.sealing",
+                raw_ev_file,
+                sealed_ev_file,
+            ],
+        },
+        {
+            "name": "stix",
+            "cmd": [
+                py,
+                "-m",
+                "detection.engine",
+                contract_file,
+                sealed_ev_file,
+                stix_file,
+            ],
+        },
     ]
-    
+
     failed_stage = None
 
-    # 2. Execute pipeline sequentially and populate structural telemetry
+    # -----------------------------------------------------------------------
+    # Execute pipeline sequentially
+    # -----------------------------------------------------------------------
+
     for stage in stages_config:
         stage_name = stage["name"]
         cmd = stage["cmd"]
-        
+
         stage_telemetry = {
             "stage": stage_name,
             "status": "pending",
             "command": " ".join(cmd),
             "duration": 0.0,
-            "output": ""
+            "output": "",
         }
-        
+
         if failed_stage:
             stage_telemetry["status"] = "skipped"
             pipeline_stages.append(stage_telemetry)
             continue
-            
+
         t0 = time.time()
+
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=child_env)
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+                env=child_env,
+            )
+
             elapsed = round(time.time() - t0, 3)
+
             stage_telemetry["status"] = "success"
             stage_telemetry["duration"] = elapsed
             stage_telemetry["output"] = result.stdout.strip()
+
             pipeline_stages.append(stage_telemetry)
+
         except subprocess.CalledProcessError as e:
             elapsed = round(time.time() - t0, 3)
+
             failed_stage = stage_name
+
             stage_telemetry["status"] = "failed"
             stage_telemetry["duration"] = elapsed
+
             stderr_text = e.stderr.strip() if e.stderr else "Unknown error"
             stdout_text = e.stdout.strip() if e.stdout else ""
+
             stage_telemetry["output"] = stderr_text or stdout_text
+
             pipeline_stages.append(stage_telemetry)
+
         except FileNotFoundError as e:
             elapsed = round(time.time() - t0, 3)
+
             failed_stage = stage_name
+
             stage_telemetry["status"] = "failed"
             stage_telemetry["duration"] = elapsed
-            stage_telemetry["output"] = f"Required executable missing: {e.filename}"
+            stage_telemetry["output"] = (
+                f"Required executable missing: {e.filename}"
+            )
+
             pipeline_stages.append(stage_telemetry)
 
-    # 3. If the pipeline failed at any point, throw 500 but return the full structured timeline
-    if failed_stage:
-        raise HTTPException(status_code=500, detail={
-            "status": "failed",
-            "investigation_id": inv_id,
-            "failed_stage": failed_stage,
-            "pipeline_stages": pipeline_stages,
-        })
+    # -----------------------------------------------------------------------
+    # Pipeline failure
+    # -----------------------------------------------------------------------
 
-    # --- 4. Collect post-execution contextual telemetry ---
+    if failed_stage:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "failed",
+                "investigation_id": inv_id,
+                "failed_stage": failed_stage,
+                "pipeline_stages": pipeline_stages,
+            },
+        )
+
+    # -----------------------------------------------------------------------
+    # Post-execution contextual telemetry
+    # -----------------------------------------------------------------------
 
     ir_operations = []
     capabilities_used = []
+
     try:
-        with open(contract_file, "r") as f:
+        with open(contract_file, "r", encoding="utf-8") as f:
             ir_data = json.load(f)
+
         for inst in ir_data.get("instructions", []):
             op_type = inst.get("type", "unknown")
-            ir_operations.append({
-                "type": op_type,
-                "operation": inst.get("operation", ""),
-                "capability": inst.get("capability", ""),
-            })
+
+            ir_operations.append(
+                {
+                    "type": op_type,
+                    "operation": inst.get("operation", ""),
+                    "capability": inst.get("capability", ""),
+                }
+            )
+
             if op_type == "collect":
-                capabilities_used.append(inst.get("operation", ""))
+                capabilities_used.append(
+                    inst.get("operation", "")
+                )
+
     except Exception:
         pass
+
+    # -----------------------------------------------------------------------
+    # Evidence telemetry
+    # -----------------------------------------------------------------------
 
     sealed_artifacts_count = 0
     evidence_objects = []
     seal_hash = None
+
     try:
-        with open(sealed_ev_file, "r") as f:
+        with open(sealed_ev_file, "r", encoding="utf-8") as f:
             sdata = json.load(f)
+
         sealed_artifacts = sdata.get("sealed_artifacts", [])
+
         sealed_artifacts_count = len(sealed_artifacts)
         seal_hash = sdata.get("manifest_id", None)
+
         for art in sealed_artifacts:
-            evidence_objects.append({
-                "evidence_id": art.get("evidence_id", ""),
-                "type": art.get("type", "unknown"),
-                "provider": art.get("provider", "linux"),
-                "sha256": art.get("sha256", ""),
-            })
+            evidence_objects.append(
+                {
+                    "evidence_id": art.get("evidence_id", ""),
+                    "type": art.get("type", "unknown"),
+                    "provider": art.get(
+                        "provider",
+                        "linux",
+                    ),
+                    "sha256": art.get("sha256", ""),
+                }
+            )
+
     except Exception:
         pass
+
+    # -----------------------------------------------------------------------
+    # STIX telemetry
+    # -----------------------------------------------------------------------
 
     stix_objects_count = 0
     stix_findings_count = 0
+
     try:
-        with open(stix_file, "r") as f:
+        with open(stix_file, "r", encoding="utf-8") as f:
             stdata = json.load(f)
+
         stix_objs = stdata.get("objects", [])
+
         stix_objects_count = len(stix_objs)
-        stix_findings_count = sum(1 for o in stix_objs if o.get("type") == "indicator")
+
+        stix_findings_count = sum(
+            1
+            for obj in stix_objs
+            if obj.get("type") == "indicator"
+        )
+
     except Exception:
         pass
+
+    # -----------------------------------------------------------------------
+    # Sealed evidence file hash
+    # -----------------------------------------------------------------------
 
     sealed_file_hash = None
+
     try:
         with open(sealed_ev_file, "rb") as f:
-            sealed_file_hash = hashlib.sha256(f.read()).hexdigest()
+            sealed_file_hash = hashlib.sha256(
+                f.read()
+            ).hexdigest()
+
     except Exception:
         pass
+
+    # -----------------------------------------------------------------------
+    # Encrypted payload size
+    # -----------------------------------------------------------------------
 
     enc_size = 0
+
     try:
         enc_size = os.path.getsize(enc_file)
+
     except Exception:
         pass
 
-    # 5. Return nested orchestration blueprint
+    # -----------------------------------------------------------------------
+    # Final response
+    # -----------------------------------------------------------------------
+
     return {
         "status": "completed",
         "investigation_id": inv_id,
@@ -225,6 +463,6 @@ async def orchestrate_investigation(req: InvestigationRequest):
                 "file_path": stix_file,
                 "objects_count": stix_objects_count,
                 "findings_count": stix_findings_count,
-            }
-        }
+            },
+        },
     }

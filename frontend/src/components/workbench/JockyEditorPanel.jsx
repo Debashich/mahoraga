@@ -1,81 +1,217 @@
-import { useState } from 'react';
-import { Code2, Play, FileCode, PlusCircle, Check, Loader2, GitCommit } from 'lucide-react';
-
-const JOCKY_EXAMPLES = {
-  "host_sweep.jocky": `investigation "Host Sweep Investigation" {
-    collect process_list as procs
-    collect system_info as sys
-    collect network_connections as conns
-    collect auth_logs as auth
-
-    correlate procs with sys
-    correlate procs with conns
-
-    emit evidence
-}`,
-  "hunt.jocky": `investigation "Threat Hunting Sweep" {
-    collect process_list as procs
-    collect file_metadata as files
-    collect memory_snapshot as mem
-
-    correlate procs with files
-
-    emit evidence
-}`,
-  "process_inventory.jocky": `investigation "Process & User Audit" {
-    collect process_list as procs
-    collect users as local_users
-    collect event_logs as events
-
-    correlate procs with local_users
-
-    emit evidence
-}`,
-};
+import { useEffect, useState } from 'react';
+import {
+  Code2,
+  Play,
+  FileCode,
+  PlusCircle,
+  Check,
+  Loader2,
+  GitCommit
+} from 'lucide-react';
 
 const CAPABILITY_OPTIONS = [
-  { id: 'process_list', alias: 'procs', desc: 'Process execution & metadata' },
-  { id: 'system_info', alias: 'sys', desc: 'Host identity & OS details' },
-  { id: 'network_connections', alias: 'conns', desc: 'Sockets & network links' },
-  { id: 'users', alias: 'local_users', desc: 'User accounts & privileges' },
-  { id: 'auth_logs', alias: 'auth', desc: 'Login & authentication events' },
-  { id: 'file_metadata', alias: 'files', desc: 'FileSystem evidence & hashes' },
-  { id: 'memory_snapshot', alias: 'mem', desc: 'Process memory acquisition' },
-  { id: 'driver_scan', alias: 'drivers', desc: 'Kernel driver module scan' },
+  {
+    id: 'process_list',
+    alias: 'procs',
+    desc: 'Process execution & metadata'
+  },
+  {
+    id: 'system_info',
+    alias: 'sys',
+    desc: 'Host identity & OS details'
+  },
+  {
+    id: 'network_connections',
+    alias: 'conns',
+    desc: 'Sockets & network links'
+  },
+  {
+    id: 'users',
+    alias: 'local_users',
+    desc: 'User accounts & privileges'
+  },
+  {
+    id: 'auth_logs',
+    alias: 'auth',
+    desc: 'Login & authentication events'
+  },
+  {
+    id: 'file_metadata',
+    alias: 'files',
+    desc: 'FileSystem evidence & hashes'
+  },
+  {
+    id: 'memory_snapshot',
+    alias: 'mem',
+    desc: 'Process memory acquisition'
+  },
+  {
+    id: 'driver_scan',
+    alias: 'drivers',
+    desc: 'Kernel driver module scan'
+  }
 ];
 
-export default function JockyEditorPanel({ 
-  source, 
-  onChangeSource, 
-  onRunPreflight, 
-  onRunInvestigation, 
-  isOrchestrating 
+export default function JockyEditorPanel({
+  source,
+  onChangeSource,
+  onRunPreflight,
+  onRunInvestigation,
+  isOrchestrating
 }) {
-  const [selectedExample, setSelectedExample] = useState('host_sweep.jocky');
+  const [exampleFiles, setExampleFiles] = useState([]);
+  const [selectedExample, setSelectedExample] = useState('');
+  const [isLoadingExamples, setIsLoadingExamples] = useState(true);
+  const [exampleError, setExampleError] = useState('');
   const [insertedFeedback, setInsertedFeedback] = useState('');
 
-  const handleLoadExample = (exampleKey) => {
-    setSelectedExample(exampleKey);
-    onChangeSource(JOCKY_EXAMPLES[exampleKey]);
+  /*
+   * Load all available .jocky examples from the backend.
+   */
+  useEffect(() => {
+    const loadExamples = async () => {
+      setIsLoadingExamples(true);
+      setExampleError('');
+
+      try {
+        const response = await fetch('/api/v1/examples');
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to load examples: ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+
+        const files = Array.isArray(data.files)
+          ? data.files
+              .filter(
+                (file) =>
+                  typeof file === 'string' &&
+                  file.toLowerCase().endsWith('.jocky')
+              )
+              .sort()
+          : [];
+
+        setExampleFiles(files);
+
+        /*
+         * Automatically load the first available example.
+         */
+        if (files.length > 0) {
+          setSelectedExample(files[0]);
+          await loadExample(files[0]);
+        }
+      } catch (error) {
+        console.error(
+          'Failed to load Jocky examples:',
+          error
+        );
+
+        setExampleFiles([]);
+        setSelectedExample('');
+        setExampleError(
+          'Unable to load examples from the backend.'
+        );
+      } finally {
+        setIsLoadingExamples(false);
+      }
+    };
+
+    loadExamples();
+  }, []);
+
+  /*
+   * Load the contents of a specific .jocky example.
+   */
+  const loadExample = async (filename) => {
+    if (!filename) return;
+
+    try {
+      const response = await fetch(
+        `/api/v1/examples/${encodeURIComponent(filename)}`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to load ${filename}: ${response.status}`
+        );
+      }
+
+      const data = await response.json();
+
+      setSelectedExample(filename);
+      onChangeSource(data.source || '');
+    } catch (error) {
+      console.error(
+        `Failed to load Jocky example "${filename}":`,
+        error
+      );
+
+      setExampleError(
+        `Unable to load ${filename}.`
+      );
+    }
+  };
+
+  const handleLoadExample = (event) => {
+    const filename = event.target.value;
+
+    if (!filename) {
+      setSelectedExample('');
+      onChangeSource('');
+      return;
+    }
+
+    loadExample(filename);
   };
 
   const handleInsertCapability = (cap) => {
     const statement = `    collect ${cap.id} as ${cap.alias}\n`;
+
     if (source.includes(`collect ${cap.id}`)) {
-      setInsertedFeedback(`Already collected: ${cap.id}`);
-      setTimeout(() => setInsertedFeedback(''), 2000);
+      setInsertedFeedback(
+        `Already collected: ${cap.id}`
+      );
+
+      setTimeout(
+        () => setInsertedFeedback(''),
+        2000
+      );
+
       return;
     }
-    const match = source.match(/investigation\s+"[^"]+"\s*\{/);
+
+    const match = source.match(
+      /investigation\s+"[^"]+"\s*\{/
+    );
+
     if (match) {
-      const idx = match.index + match[0].length;
-      const newSource = source.slice(0, idx) + '\n' + statement + source.slice(idx);
+      const idx =
+        match.index + match[0].length;
+
+      const newSource =
+        source.slice(0, idx) +
+        '\n' +
+        statement +
+        source.slice(idx);
+
       onChangeSource(newSource);
     } else {
-      onChangeSource(source + '\n' + statement);
+      onChangeSource(
+        source + '\n' + statement
+      );
     }
-    setInsertedFeedback(`Inserted: collect ${cap.id}`);
-    setTimeout(() => setInsertedFeedback(''), 2000);
+
+    setInsertedFeedback(
+      `Inserted: collect ${cap.id}`
+    );
+
+    setTimeout(
+      () => setInsertedFeedback(''),
+      2000
+    );
   };
 
   const lineCount = source.split('\n').length;
@@ -83,50 +219,110 @@ export default function JockyEditorPanel({
 
   return (
     <div className="panel-card jocky-editor-card">
+
       <div className="panel-header">
+
         <div className="panel-title">
           <Code2 size={14} />
           <span>Jocky DSL Editor</span>
         </div>
-        
+
         <div className="editor-actions">
+
           <div className="example-selector">
+
             <FileCode size={12} />
+
             <select
               className="select-mini"
               value={selectedExample}
-              onChange={(e) => handleLoadExample(e.target.value)}
-              disabled={isOrchestrating}
+              onChange={handleLoadExample}
+              disabled={
+                isOrchestrating ||
+                isLoadingExamples
+              }
             >
-              <option value="host_sweep.jocky">host_sweep.jocky</option>
-              <option value="hunt.jocky">hunt.jocky</option>
-              <option value="process_inventory.jocky">process_inventory.jocky</option>
+              {isLoadingExamples ? (
+                <option value="">
+                  Loading examples...
+                </option>
+              ) : exampleFiles.length === 0 ? (
+                <option value="">
+                  No .jocky examples found
+                </option>
+              ) : (
+                <>
+                  <option value="">
+                    Select example...
+                  </option>
+
+                  {exampleFiles.map((filename) => (
+                    <option
+                      key={filename}
+                      value={filename}
+                    >
+                      {filename}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
+
           </div>
 
-          <button className="btn" onClick={onRunPreflight} disabled={isOrchestrating}>
-            <Play size={12} /> Pre-Flight
-          </button>
-
-          <button 
-            className="btn btn-primary" 
-            onClick={onRunInvestigation} 
+          <button
+            className="btn"
+            onClick={onRunPreflight}
             disabled={isOrchestrating}
           >
-            {isOrchestrating ? <Loader2 size={12} className="spin" /> : <GitCommit size={12} />}
-            {isOrchestrating ? 'Running...' : 'Run Investigation'}
+            <Play size={12} />
+            Pre-Flight
           </button>
+
+          <button
+            className="btn btn-primary"
+            onClick={onRunInvestigation}
+            disabled={isOrchestrating}
+          >
+            {isOrchestrating ? (
+              <Loader2
+                size={12}
+                className="spin"
+              />
+            ) : (
+              <GitCommit size={12} />
+            )}
+
+            {isOrchestrating
+              ? 'Running...'
+              : 'Run Investigation'}
+          </button>
+
         </div>
+
       </div>
 
+      {exampleError && (
+        <div className="example-error">
+          {exampleError}
+        </div>
+      )}
+
       <div className="editor-quickbar">
-        <span className="quickbar-label">INSERT CAPABILITY:</span>
+
+        <span className="quickbar-label">
+          INSERT CAPABILITY:
+        </span>
+
         <div className="capability-chips">
+
           {CAPABILITY_OPTIONS.map((cap) => (
             <button
               key={cap.id}
               className="cap-chip"
-              onClick={() => handleInsertCapability(cap)}
+              onClick={() =>
+                handleInsertCapability(cap)
+              }
               title={cap.desc}
               disabled={isOrchestrating}
             >
@@ -134,36 +330,59 @@ export default function JockyEditorPanel({
               <span>{cap.id}</span>
             </button>
           ))}
+
         </div>
+
         {insertedFeedback && (
           <span className="feedback-tag">
-            <Check size={10} /> {insertedFeedback}
+            <Check size={10} />
+            {insertedFeedback}
           </span>
         )}
+
       </div>
 
       <div className="editor-container">
+
         <div className="line-numbers">
-          {Array.from({ length: lineCount }).map((_, i) => (
-            <span key={i + 1}>{i + 1}</span>
+
+          {Array.from({
+            length: lineCount
+          }).map((_, i) => (
+            <span key={i + 1}>
+              {i + 1}
+            </span>
           ))}
+
         </div>
+
         <textarea
           className="editor-textarea"
           value={source}
-          onChange={(e) => onChangeSource(e.target.value)}
+          onChange={(e) =>
+            onChangeSource(e.target.value)
+          }
           placeholder="// Type Jocky DSL source code here..."
           spellCheck={false}
           readOnly={isOrchestrating}
         />
+
       </div>
 
       <div className="editor-footer">
-        <span>Lines: {lineCount} | Chars: {charCount}</span>
-        <span className="lang-tag">Syntax: Jocky DSL v1</span>
+
+        <span>
+          Lines: {lineCount} | Chars: {charCount}
+        </span>
+
+        <span className="lang-tag">
+          Syntax: Jocky DSL v1
+        </span>
+
       </div>
 
       <style>{`
+
         .jocky-editor-card {
           height: 100%;
           min-height: 400px;
@@ -191,11 +410,20 @@ export default function JockyEditorPanel({
           font-size: 10.5px;
           outline: none;
           cursor: pointer;
+          min-width: 130px;
         }
 
         .select-mini option {
           background: var(--bg-secondary);
           color: var(--text-primary);
+        }
+
+        .example-error {
+          padding: 6px 10px;
+          background: var(--bg-primary);
+          border-bottom: 1px solid var(--border-color);
+          color: var(--text-muted);
+          font-size: 10px;
         }
 
         .editor-quickbar {
@@ -312,10 +540,17 @@ export default function JockyEditorPanel({
         }
 
         @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
+          from {
+            transform: rotate(0deg);
+          }
+
+          to {
+            transform: rotate(360deg);
+          }
         }
+
       `}</style>
+
     </div>
   );
 }
