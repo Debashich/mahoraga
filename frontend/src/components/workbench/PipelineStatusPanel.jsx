@@ -2,11 +2,9 @@ import { useState } from 'react';
 import {
   GitCommit,
   ShieldCheck,
-  FileText,
   Cpu,
   Lock,
   Terminal,
-  Radio,
   Loader2,
   AlertTriangle,
   Check,
@@ -15,10 +13,10 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
-const PIPELINE_STAGE_META = [
+const PIPELINE_STAGE_META_BASE = [
   { id: 'compiler', name: 'Jocky Compiler (IR)', icon: Terminal, desc: 'Lexer & Parser tokenization' },
   { id: 'obfuscator', name: 'Polymorphic Encryption', icon: Lock, desc: 'Encrypted .enc payload generation' },
-  { id: 'runtime', name: 'Native C++ Runtime', icon: Cpu, desc: 'Linux Provider execution' },
+  { id: 'runtime', name: 'Native C++ Runtime', icon: Cpu, desc: null },
   { id: 'sealing', name: 'Evidence Sealing', icon: ShieldCheck, desc: 'SHA-256 cryptographic seal' },
   { id: 'stix', name: 'STIX 2.1 Generation', icon: GitCommit, desc: 'Threat intelligence bundle' },
 ];
@@ -31,8 +29,16 @@ export default function PipelineStatusPanel({
   pipelineStages = [],
   pipelineProgress = 0,
   currentActivity = '',
+  targetPlatform = 'Linux',
 }) {
   const [expanded, setExpanded] = useState(true);
+
+  // Build stage metadata with a platform-aware runtime description
+  const PIPELINE_STAGE_META = PIPELINE_STAGE_META_BASE.map(meta =>
+    meta.id === 'runtime'
+      ? { ...meta, desc: `${targetPlatform} Provider execution` }
+      : meta
+  );
 
   const getStatusForStage = (stageId) => {
     const match = pipelineStages.find(s => s.id === stageId);
@@ -80,7 +86,7 @@ export default function PipelineStatusPanel({
 
   const hasResult = !!orchestrationResult && !isOrchestrating;
   const isSuccess = hasResult && orchestrationResult.success;
-  
+
   // Extract data based on success vs failure payload structures
   const resultData = isSuccess ? orchestrationResult.data : null;
   const telemetry = resultData?.telemetry;
@@ -198,12 +204,12 @@ export default function PipelineStatusPanel({
                       <div key={i} className={`console-line ${stage.status === 'failed' ? 'error' : 'success'}`}>
                         <span>[{stage.status === 'completed' ? '+' : '!'}] [{stage.id}] {stage.output || 'Execution finished'}</span>
                         {stage.duration !== undefined && (
-                          <span className="muted" style={{marginLeft: 'auto'}}>
+                          <span className="muted" style={{ marginLeft: 'auto' }}>
                             {stage.duration}s
                           </span>
                         )}
                       </div>
-                  ))}
+                    ))}
 
                   {isSuccess ? (
                     <div className="console-line success highlight">

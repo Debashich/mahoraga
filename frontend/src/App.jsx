@@ -15,7 +15,8 @@ function App() {
   const [activeRoute, setActiveRoute] = useState('workbench');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
-  const [targetPlatform, setTargetPlatform] = useState('Linux');
+  const detectedPlatform = typeof navigator !== 'undefined' && /win/i.test(navigator.userAgent) ? 'Windows' : 'Linux';
+  const [targetPlatform, setTargetPlatform] = useState(detectedPlatform);
   const [preset, setPreset] = useState('balanced');
   const [cmiConnected, setCmiConnected] = useState(false);
   const [cmiStatusText, setCmiStatusText] = useState('CHECKING');

@@ -17,7 +17,7 @@ if(WIN32)
         runtime/core/Dispatcher.cpp
         runtime/providers/windows/WindowsProvider.cpp
     )
-    target_link_libraries(mahoraga-run PRIVATE nlohmann_json iphlpapi ws2_32)
+    target_link_libraries(mahoraga-run PRIVATE nlohmann_json iphlpapi ws2_32 netapi32 psapi advapi32)
 else()
     add_executable(mahoraga-run
         runtime/main.cpp

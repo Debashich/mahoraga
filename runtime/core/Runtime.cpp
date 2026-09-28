@@ -2,7 +2,12 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <filesystem>
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
 
 Runtime::Runtime(std::unique_ptr<Provider> provider) 
     : m_dispatcher(std::move(provider)), m_evidenceBundle(nlohmann::json::array()) {}
@@ -28,7 +33,13 @@ void Runtime::execute(const nlohmann::json& payload) {
     }
     
     // Output Raw Evidence to file
-    std::filesystem::create_directories("out/evidence");
+#ifdef _WIN32
+    _mkdir("out");
+    _mkdir("out/evidence");
+#else
+    mkdir("out", 0755);
+    mkdir("out/evidence", 0755);
+#endif
     std::ofstream out("out/evidence/raw_evidence.json");
     out << m_evidenceBundle.dump(4);
     out.close();

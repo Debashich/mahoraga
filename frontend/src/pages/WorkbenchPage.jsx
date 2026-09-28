@@ -196,6 +196,7 @@ export default function WorkbenchPage({
         pipelineStages={pipelineStages}
         pipelineProgress={pipelineProgress}
         currentActivity={currentActivity}
+        targetPlatform={targetPlatform}
       />
 
       {/* Result Summary Section */}

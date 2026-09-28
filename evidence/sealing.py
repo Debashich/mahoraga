@@ -1,14 +1,31 @@
 import json
 import uuid
 import datetime
+import os
+import sys
 from pathlib import Path
 
 from .hashing import compute_sha256
 
 
+def _detect_provider():
+    """Determine the active provider name.
+
+    Priority:
+      1. MAHORAGA_TARGET_PLATFORM env var (set by CMI server)
+      2. Auto-detect from the host OS via sys.platform
+    """
+    env_platform = os.environ.get("MAHORAGA_TARGET_PLATFORM", "").strip()
+    if env_platform:
+        return env_platform.lower()
+    return "windows" if sys.platform == "win32" else "linux"
+
+
 def seal_evidence(raw_path: str, sealed_path: str):
     with open(raw_path, "r") as f:
         raw_bundles = json.load(f)
+
+    provider_name = _detect_provider()
 
     manifest = {
         "manifest_id": str(uuid.uuid4()),
@@ -37,7 +54,7 @@ def seal_evidence(raw_path: str, sealed_path: str):
             sealed_artifact = {
                 "evidence_id": str(uuid.uuid4()),
                 "type": evidence_type.replace("evidence_", ""),
-                "provider": "linux",
+                "provider": provider_name,
                 "data": item,
                 "sha256": artifact_hash,
             }

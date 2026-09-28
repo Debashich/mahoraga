@@ -1,7 +1,6 @@
 import {
   CheckCircle2,
   XCircle,
-  AlertTriangle,
   FileText,
   ShieldCheck,
   GitCommit,
