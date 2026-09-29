@@ -1,7 +1,0 @@
-investigation "Stealth Host Sweep" {
-    collect system_info as sys
-    collect process_list as procs
-    collect network_connections as conns
-    
-    emit evidence
-}

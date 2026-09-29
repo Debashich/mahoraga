@@ -12,9 +12,15 @@ import InvestigationConfigPanel from '../components/workbench/InvestigationConfi
 import PreflightDiagnosticsPanel from '../components/workbench/PreflightDiagnosticsPanel';
 import PipelineStatusPanel from '../components/workbench/PipelineStatusPanel';
 import ResultSummaryCard from '../components/workbench/ResultSummaryCard';
-
+import Editor from '@monaco-editor/react';
 import { orchestrateInvestigation } from '../utils/cmiClient';
 
+/*
+ * Actual backend pipeline.
+ *
+ * These are deliberately separate from the five user-facing
+ * investigation layers.
+ */
 const PIPELINE_STAGE_IDS = [
   'parse',
   'semantic',
@@ -26,24 +32,29 @@ const PIPELINE_STAGE_IDS = [
   'stix',
 ];
 
+/*
+ * Mahoraga's five user-facing investigation layers.
+ *
+ * Pre-flight is part of Layer 2 rather than being its own layer.
+ */
 const LAYERS = [
   {
     id: 1,
-    title: 'SOURCE INPUT',
-    subtitle: 'Select / write Jocky program',
-    short: 'SOURCE',
+    title: 'INVESTIGATION',
+    subtitle: 'Select / write Jocky investigation',
+    short: 'INVESTIGATION',
   },
   {
     id: 2,
     title: 'INVESTIGATION CONFIGURATION',
-    subtitle: 'Target + capabilities + execution context',
-    short: 'CONFIG',
+    subtitle: 'Target + capabilities + pre-flight readiness',
+    short: 'CONFIGURATION',
   },
   {
     id: 3,
-    title: 'PRE-FLIGHT & COMPILATION',
-    subtitle: 'Validate → compile → lower → prepare',
-    short: 'PREFLIGHT',
+    title: 'COMPILATION',
+    subtitle: 'Validate → IR → lower → prepare',
+    short: 'COMPILATION',
   },
   {
     id: 4,
@@ -53,32 +64,18 @@ const LAYERS = [
   },
   {
     id: 5,
-    title: 'EVIDENCE VAULT',
-    subtitle: 'Seal → hash → preserve forensic evidence',
+    title: 'EVIDENCE & DETECTION',
+    subtitle: 'Seal → preserve → detect → report',
     short: 'EVIDENCE',
-  },
-  {
-    id: 6,
-    title: 'DETECTION & INTELLIGENCE',
-    subtitle: 'STIX 2.1 + investigation findings',
-    short: 'INTEL',
-  },
-  {
-    id: 7,
-    title: 'INVESTIGATION OVERVIEW',
-    subtitle: 'Results → evidence → findings → pipeline status',
-    short: 'OVERVIEW',
   },
 ];
 
 const PHASE_META = {
   1: 'Jocky investigation source',
-  2: 'Investigation configuration',
-  3: 'Diagnostics and validation',
-  4: 'Compiler and runtime pipeline',
-  5: 'Evidence sealing and integrity',
-  6: 'STIX findings generation',
-  7: 'Investigation result summary',
+  2: 'Target, capability, provider and evidence readiness',
+  3: 'Jocky → Forensic IR → native instructions',
+  4: 'Native forensic provider execution',
+  5: 'Sealed evidence and STIX findings',
 };
 
 const PHASE_STATUS_LABEL = {
@@ -97,25 +94,14 @@ export default function WorkbenchPage({
   onOrchestrationComplete,
   lastResult,
 }) {
-  const [jockySource, setJockySource] = useState(`investigation "Host Sweep Investigation" {
-  collect process_list as procs
-  collect system_info as sys
-  collect network_connections as conns
-  collect auth_logs as auth
-
-  correlate procs with sys
-  correlate procs with conns
-
-  emit evidence
-}`);
-
-  const [investigationName, setInvestigationName] = useState(
-    'Host Sweep Investigation'
+  const [jockySource, setJockySource] = useState(
+    "// Paste your Jocky source code here"
   );
+  const [investigationName, setInvestigationName] = useState("");
 
-  const [operatorId, setOperatorId] = useState('local-operator');
+  const [operatorId, setOperatorId] = useState("");
 
-  const [evidenceFormat, setEvidenceFormat] = useState('Canonical + STIX');
+  const [evidenceFormat, setEvidenceFormat] = useState("");
 
   const [sealIntegrity, setSealIntegrity] = useState(true);
 
@@ -146,63 +132,127 @@ export default function WorkbenchPage({
   const [currentActivity, setCurrentActivity] = useState('');
 
   /*
-   * 1 = source
-   * 2 = config
-   * 3 = preflight
+   * Five user-facing layers:
+   *
+   * 1 = investigation
+   * 2 = configuration + pre-flight
+   * 3 = compilation
    * 4 = execution
-   * 5 = evidence
-   * 6 = intelligence
-   * 7 = overview
+   * 5 = evidence & detection
    */
   const [activeLayer, setActiveLayer] = useState(1);
 
-  const handleToggleCapability = (capId) => {
-    if (activeCapabilities.includes(capId)) {
-      setActiveCapabilities(activeCapabilities.filter((c) => c !== capId));
-    } else {
-      setActiveCapabilities([...activeCapabilities, capId]);
-    }
-  };
+  const handleToggleCapability = useCallback((capId) => {
+    setActiveCapabilities((prev) =>
+      prev.includes(capId)
+        ? prev.filter((c) => c !== capId)
+        : [...prev, capId]
+    );
 
-  const handleRunPreflight = () => {
+    /*
+     * Changing configuration invalidates the previous pre-flight result.
+     * This prevents stale "READY" state after the investigator changes
+     * the target or requested capabilities.
+     */
+    setPreflightResults(null);
+  }, []);
+
+  const handleConfigChange = useCallback((setter) => {
+    setter();
+    setPreflightResults(null);
+  }, []);
+
+  /*
+   * Investigation pre-flight.
+   *
+   * This is deliberately a readiness assessment rather than a
+   * separate workflow stage.
+   */
+  const handleRunPreflight = useCallback(() => {
+    const source = jockySource.trim();
+
     const hasInvestigation =
-      jockySource.includes('investigation') && jockySource.includes('{');
+      source.includes('investigation') && source.includes('{');
 
-    const hasEmit = jockySource.includes('emit evidence');
+    const hasEmit = source.includes('emit evidence');
 
     const hasCorrelateWith =
-      !jockySource.match(/correlate\s+\w+\s+/) || jockySource.includes('with');
+      !source.match(/correlate\s+\w+\s+/) || source.includes('with');
 
-    const validSyntax = hasInvestigation && hasEmit;
+    const hasTarget = Boolean(targetPlatform);
+
+    const hasCapabilities = activeCapabilities.length > 0;
+
+    const hasOperator = operatorId.trim().length > 0;
+
+    const hasInvestigationName = investigationName.trim().length > 0;
 
     const checks = [
       {
         name: 'Jocky DSL Syntax',
-        status: validSyntax ? 'PASS' : 'BLOCK',
-        detail: validSyntax
-          ? 'Investigation block and emit statement parsed.'
-          : 'Syntax Error: Missing investigation block or emit statement.',
+        status: hasInvestigation && hasEmit ? 'PASS' : 'BLOCK',
+        detail:
+          hasInvestigation && hasEmit
+            ? 'Investigation block and emit statement detected.'
+            : 'Syntax Error: Missing investigation block or emit statement.',
       },
 
       {
         name: 'Correlate Syntax',
         status: hasCorrelateWith ? 'PASS' : 'WARN',
         detail: hasCorrelateWith
-          ? 'Correlate uses correct "with" keyword.'
+          ? 'Correlate statements use the expected "with" form.'
           : 'Warning: correlate requires "correlate X with Y" syntax.',
+      },
+
+      {
+        name: 'Target Platform',
+        status: hasTarget ? 'PASS' : 'BLOCK',
+        detail: hasTarget
+          ? `Target platform resolved as ${targetPlatform}.`
+          : 'No target platform has been selected.',
+      },
+
+      {
+        name: 'Capability Configuration',
+        status: hasCapabilities ? 'PASS' : 'BLOCK',
+        detail: hasCapabilities
+          ? `${activeCapabilities.length} forensic capabilities requested.`
+          : 'At least one forensic capability must be selected.',
+      },
+
+      {
+        name: 'Investigation Identity',
+        status:
+          hasInvestigationName && hasOperator ? 'PASS' : 'BLOCK',
+        detail:
+          hasInvestigationName && hasOperator
+            ? `Investigation "${investigationName}" assigned to ${operatorId}.`
+            : 'Investigation name and operator identity are required.',
+      },
+
+      {
+        name: 'Evidence Configuration',
+        status: sealIntegrity ? 'PASS' : 'WARN',
+        detail: sealIntegrity
+          ? `Integrity sealing enabled with ${evidenceFormat} output.`
+          : 'Integrity sealing is disabled. Evidence can still be collected, but sealing is not enabled.',
       },
 
       {
         name: 'Backend Endpoint Contract',
         status: 'PASS',
         detail:
-          'POST /api/v1/orchestrate accepts { jocky_source, target_platform } payload.',
+          'POST /api/v1/orchestrate accepts { jocky_source, target_platform }.',
       },
 
       {
         name: 'Provider Capability Contract',
-        status: 'PASS',
-        detail: `Selected capabilities configured for ${targetPlatform} Provider.`,
+        status: hasCapabilities && hasTarget ? 'PASS' : 'BLOCK',
+        detail:
+          hasCapabilities && hasTarget
+            ? `Selected capabilities are configured for the ${targetPlatform} provider.`
+            : 'Provider capability resolution cannot proceed without a target and capabilities.',
       },
 
       {
@@ -214,21 +264,45 @@ export default function WorkbenchPage({
       },
     ];
 
-    setPreflightResults({ checks });
+    const blocked = checks.some((check) => check.status === 'BLOCK');
 
-    const passed =
-      checks.every((check) => check.status !== 'BLOCK') && cmiConnected;
+    const passed = !blocked && cmiConnected;
 
+    setPreflightResults({
+      checks,
+      passed,
+      timestamp: Date.now(),
+      targetPlatform,
+      capabilities: [...activeCapabilities],
+    });
+
+    /*
+     * Successful pre-flight does NOT create another layer.
+     *
+     * It completes Layer 2 and moves the investigator into
+     * the actual compilation layer.
+     */
     if (passed) {
       setActiveLayer(3);
+    } else {
+      setActiveLayer(2);
     }
-  };
+  }, [
+    jockySource,
+    targetPlatform,
+    activeCapabilities,
+    operatorId,
+    investigationName,
+    sealIntegrity,
+    evidenceFormat,
+    cmiConnected,
+  ]);
 
   const simulateStageProgression = useCallback(async () => {
     const stageLabels = [
       'Parsing Jocky DSL tokens...',
       'Validating semantic rules...',
-      'Resolving capabilities...',
+      'Resolving forensic capabilities...',
       'Lowering to Forensic IR...',
       'Encrypting payload...',
       'Executing native C++ runtime...',
@@ -238,12 +312,12 @@ export default function WorkbenchPage({
 
     for (let i = 0; i < PIPELINE_STAGE_IDS.length; i++) {
       setPipelineStages((prev) =>
-        prev.map((s, idx) =>
+        prev.map((stage, idx) =>
           idx === i
-            ? { ...s, status: 'running' }
+            ? { ...stage, status: 'running' }
             : idx < i
-              ? { ...s, status: 'completed' }
-              : s
+              ? { ...stage, status: 'completed' }
+              : stage
         )
       );
 
@@ -260,6 +334,18 @@ export default function WorkbenchPage({
   const handleRunInvestigation = async () => {
     if (isOrchestrating) return;
 
+    /*
+     * Do not execute without a valid Layer 2 pre-flight.
+     */
+    const preflightPassed =
+      preflightResults?.passed === true &&
+      preflightResults?.targetPlatform === targetPlatform;
+
+    if (!preflightPassed) {
+      setActiveLayer(2);
+      return;
+    }
+
     setActiveLayer(4);
     setIsOrchestrating(true);
     setOrchestrationResult(null);
@@ -272,8 +358,7 @@ export default function WorkbenchPage({
     );
 
     setPipelineProgress(0);
-
-    setCurrentActivity('Initializing pipeline...');
+    setCurrentActivity('Initializing compilation and execution pipeline...');
 
     const animationPromise = simulateStageProgression();
 
@@ -282,7 +367,10 @@ export default function WorkbenchPage({
       targetPlatform
     );
 
-    const [, result] = await Promise.all([animationPromise, resultPromise]);
+    const [, result] = await Promise.all([
+      animationPromise,
+      resultPromise,
+    ]);
 
     if (result.success) {
       setPipelineStages(
@@ -293,22 +381,30 @@ export default function WorkbenchPage({
       );
 
       setPipelineProgress(100);
-
       setCurrentActivity('Investigation complete.');
 
       /*
-       * Successful backend response means execution completed.
-       * Evidence + intelligence are represented by the actual
-       * result data rather than blindly assuming they happened.
+       * Execution is complete.
+       * Evidence and intelligence are represented by the actual
+       * backend response rather than blindly assuming success.
        */
-      setActiveLayer(7);
+      setActiveLayer(5);
     } else {
       const failStage = (result.stage || '').toLowerCase();
 
       let failIdx = PIPELINE_STAGE_IDS.length - 1;
 
-      if (failStage.includes('compiler') || failStage.includes('parse')) {
+      if (
+        failStage.includes('compiler') ||
+        failStage.includes('parse')
+      ) {
         failIdx = 0;
+      } else if (failStage.includes('semantic')) {
+        failIdx = 1;
+      } else if (failStage.includes('capability')) {
+        failIdx = 2;
+      } else if (failStage.includes('ir')) {
+        failIdx = 3;
       } else if (failStage.includes('obfuscator')) {
         failIdx = 4;
       } else if (
@@ -327,12 +423,12 @@ export default function WorkbenchPage({
       }
 
       setPipelineStages((prev) =>
-        prev.map((s, idx) =>
+        prev.map((stage, idx) =>
           idx < failIdx
-            ? { ...s, status: 'completed' }
+            ? { ...stage, status: 'completed' }
             : idx === failIdx
-              ? { ...s, status: 'failed' }
-              : { ...s, status: 'idle' }
+              ? { ...stage, status: 'failed' }
+              : { ...stage, status: 'idle' }
         )
       );
 
@@ -342,7 +438,14 @@ export default function WorkbenchPage({
 
       setCurrentActivity(`Pipeline failed at: ${result.stage}`);
 
-      setActiveLayer(Math.min(failIdx + 3, 7));
+      /*
+       * Compilation/runtime failures stay in the relevant layer.
+       */
+      if (failIdx <= 4) {
+        setActiveLayer(3);
+      } else {
+        setActiveLayer(4);
+      }
     }
 
     setIsOrchestrating(false);
@@ -354,26 +457,32 @@ export default function WorkbenchPage({
   };
 
   /*
-   * Determine the visible status of each investigation layer.
+   * Determine visible state of the five user-facing layers.
    */
   const layerStatuses = useMemo(() => {
     const result = orchestrationResult;
 
     const sourceReady =
-      jockySource.trim().length > 0 && jockySource.includes('investigation');
+      jockySource.trim().length > 0 &&
+      jockySource.includes('investigation');
 
     const configReady =
       investigationName.trim().length > 0 &&
       operatorId.trim().length > 0 &&
-      activeCapabilities.length > 0;
+      activeCapabilities.length > 0 &&
+      Boolean(targetPlatform);
 
     const preflightPassed =
-      preflightResults?.checks?.length > 0 &&
-      preflightResults.checks.every((c) => c.status !== 'BLOCK');
+      preflightResults?.passed === true &&
+      preflightResults?.targetPlatform === targetPlatform;
 
-    const executionComplete = Boolean(result) && result.success === true;
+    const layer2Ready = configReady && preflightPassed;
 
-    const executionFailed = Boolean(result) && result.success === false;
+    const executionComplete =
+      Boolean(result) && result.success === true;
+
+    const executionFailed =
+      Boolean(result) && result.success === false;
 
     const evidenceComplete =
       executionComplete &&
@@ -381,21 +490,45 @@ export default function WorkbenchPage({
 
     const intelligenceComplete =
       executionComplete &&
-      (Number(result?.data?.stix_objects_count || 0) > 0 ||
-        Number(result?.data?.stix_findings_count || 0) > 0);
+      (
+        Number(result?.data?.stix_objects_count || 0) > 0 ||
+        Number(result?.data?.stix_findings_count || 0) > 0
+      );
 
-    const overviewReady = executionComplete;
+    /*
+     * Layer 5 represents the final evidence + detection state.
+     *
+     * A successful orchestration is enough to make the layer
+     * accessible. The individual evidence/detection badges can
+     * still reflect what the backend actually returned.
+     */
+    const layer5Ready =
+      executionComplete || evidenceComplete || intelligenceComplete;
 
     return {
-      1: sourceReady ? 'completed' : 'current',
+      1: sourceReady
+        ? activeLayer === 1
+          ? 'current'
+          : 'completed'
+        : 'current',
 
-      2: configReady ? 'completed' : activeLayer === 2 ? 'current' : 'pending',
-
-      3: preflightPassed
-        ? 'completed'
-        : activeLayer === 3
+      2: layer2Ready
+        ? activeLayer === 2
+          ? 'current'
+          : 'completed'
+        : activeLayer === 2
           ? 'current'
           : 'pending',
+
+      3: executionFailed
+        ? 'failed'
+        : executionComplete
+          ? 'completed'
+          : activeLayer === 3
+            ? 'current'
+            : layer2Ready
+              ? 'current'
+              : 'pending',
 
       4: executionFailed
         ? 'failed'
@@ -405,21 +538,9 @@ export default function WorkbenchPage({
             ? 'current'
             : 'pending',
 
-      5: evidenceComplete
+      5: layer5Ready
         ? 'completed'
         : activeLayer === 5
-          ? 'current'
-          : 'pending',
-
-      6: intelligenceComplete
-        ? 'completed'
-        : activeLayer === 6
-          ? 'current'
-          : 'pending',
-
-      7: overviewReady
-        ? 'completed'
-        : activeLayer === 7
           ? 'current'
           : 'pending',
     };
@@ -428,31 +549,40 @@ export default function WorkbenchPage({
     investigationName,
     operatorId,
     activeCapabilities,
+    targetPlatform,
     preflightResults,
     orchestrationResult,
     activeLayer,
   ]);
 
-  // Fill the rail's connector line up to the last node in the unbroken completed run
+  /*
+   * Fill the rail's connector line up to the last node
+   * in the unbroken completed run.
+   */
   const railProgress = useMemo(() => {
     let lastDone = -1;
+
     for (let i = 0; i < LAYERS.length; i++) {
-      if (layerStatuses[LAYERS[i].id] === 'completed') lastDone = i;
-      else break;
+      if (layerStatuses[LAYERS[i].id] === 'completed') {
+        lastDone = i;
+      } else {
+        break;
+      }
     }
-    return lastDone <= 0 ? 0 : (lastDone / (LAYERS.length - 1)) * 100;
+
+    return lastDone <= 0
+      ? 0
+      : (lastDone / (LAYERS.length - 1)) * 100;
   }, [layerStatuses]);
 
   const getLayerBadge = (id, status) => {
     if (status === 'completed') {
       const messages = {
-        1: 'SOURCE LOADED',
-        2: 'CONFIG READY',
+        1: 'SOURCE READY',
+        2: 'PRE-FLIGHT READY',
         3: 'COMPILED',
         4: 'EXECUTION COMPLETE',
-        5: 'SHA APPLIED',
-        6: 'FINDINGS GENERATED',
-        7: 'REPORT READY',
+        5: 'RESULTS READY',
       };
 
       return (
@@ -490,40 +620,75 @@ export default function WorkbenchPage({
         return (
           <JockyEditorPanel
             source={jockySource}
-            onChangeSource={setJockySource}
+            onChangeSource={(value) => {
+              setJockySource(value);
+              setPreflightResults(null);
+            }}
             onRunPreflight={() => {
               setActiveLayer(2);
             }}
-            onRunInvestigation={handleRunInvestigation}
+            onRunInvestigation={() => {
+              setActiveLayer(2);
+            }}
             isOrchestrating={isOrchestrating}
           />
         );
 
       case 2:
         return (
-          <InvestigationConfigPanel
-            investigationName={investigationName}
-            onNameChange={setInvestigationName}
-            operatorId={operatorId}
-            onOperatorChange={setOperatorId}
-            preset={preset}
-            onPresetChange={onPresetChange}
-            targetPlatform={targetPlatform}
-            onPlatformChange={onPlatformChange}
-            evidenceFormat={evidenceFormat}
-            onFormatChange={setEvidenceFormat}
-            sealIntegrity={sealIntegrity}
-            onSealChange={setSealIntegrity}
-            activeCapabilities={activeCapabilities}
-            onToggleCapability={handleToggleCapability}
-          />
+          <>
+            <InvestigationConfigPanel
+              investigationName={investigationName}
+              onNameChange={(value) => {
+                setInvestigationName(value);
+                setPreflightResults(null);
+              }}
+              operatorId={operatorId}
+              onOperatorChange={(value) => {
+                setOperatorId(value);
+                setPreflightResults(null);
+              }}
+              preset={preset}
+              onPresetChange={(value) => {
+                onPresetChange(value);
+                setPreflightResults(null);
+              }}
+              targetPlatform={targetPlatform}
+              onPlatformChange={(value) => {
+                onPlatformChange(value);
+                setPreflightResults(null);
+              }}
+              evidenceFormat={evidenceFormat}
+              onFormatChange={(value) => {
+                setEvidenceFormat(value);
+                setPreflightResults(null);
+              }}
+              sealIntegrity={sealIntegrity}
+              onSealChange={(value) => {
+                setSealIntegrity(value);
+                setPreflightResults(null);
+              }}
+              activeCapabilities={activeCapabilities}
+              onToggleCapability={handleToggleCapability}
+            />
+
+            <PreflightDiagnosticsPanel
+              preflightResults={preflightResults}
+              onRunCheck={handleRunPreflight}
+            />
+          </>
         );
 
       case 3:
         return (
-          <PreflightDiagnosticsPanel
-            preflightResults={preflightResults}
-            onRunCheck={handleRunPreflight}
+          <PipelineStatusPanel
+            cmiConnected={cmiConnected}
+            isOrchestrating={isOrchestrating}
+            orchestrationResult={orchestrationResult}
+            onTriggerOrchestration={handleRunInvestigation}
+            pipelineStages={pipelineStages}
+            pipelineProgress={pipelineProgress}
+            currentActivity={currentActivity}
           />
         );
 
@@ -541,8 +706,6 @@ export default function WorkbenchPage({
         );
 
       case 5:
-      case 6:
-      case 7:
         return (
           <ResultSummaryCard
             result={orchestrationResult}
@@ -556,10 +719,6 @@ export default function WorkbenchPage({
   };
 
   const handleLayerClick = (id) => {
-    /*
-     * Do not allow jumping into future layers.
-     * Completed/current layers remain accessible.
-     */
     const status = layerStatuses[id];
 
     if (status === 'pending') return;
@@ -584,11 +743,12 @@ export default function WorkbenchPage({
 
           <h1>JOCKY INVESTIGATION</h1>
 
-          <p>Configure → validate → execute → preserve → interpret → review</p>
+          <p>
+            Investigate → configure → compile → execute → preserve
+          </p>
         </div>
       </div>
 
-      {/* Main workbench + fixed phase tracker */}
       <div className="workbench-with-phase-rail">
         <div className="investigation-layers">
           {LAYERS.map((layer) => {
@@ -618,9 +778,13 @@ export default function WorkbenchPage({
                   </span>
 
                   <span className="layer-heading">
-                    <span className="layer-title">{layer.title}</span>
+                    <span className="layer-title">
+                      {layer.title}
+                    </span>
 
-                    <span className="layer-subtitle">{layer.subtitle}</span>
+                    <span className="layer-subtitle">
+                      {layer.subtitle}
+                    </span>
                   </span>
 
                   <span className="layer-status">
@@ -644,10 +808,15 @@ export default function WorkbenchPage({
           })}
         </div>
 
-        {/* Fixed to the viewport's right edge; the empty grid column is a spacer */}
-        <nav className="phase-rail" aria-label="Investigation phases">
+        <nav
+          className="phase-rail"
+          aria-label="Investigation phases"
+        >
           <div className="phase-rail-track">
-            <div className="phase-rail-line" aria-hidden="true">
+            <div
+              className="phase-rail-line"
+              aria-hidden="true"
+            >
               <span
                 className="phase-rail-line-fill"
                 style={{ height: `${railProgress}%` }}
@@ -668,27 +837,44 @@ export default function WorkbenchPage({
                       className={[
                         'phase-rail-node',
                         `phase-rail-node-${status}`,
-                        isActive ? 'phase-rail-node-active' : '',
+                        isActive
+                          ? 'phase-rail-node-active'
+                          : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
                       onClick={() => handleLayerClick(layer.id)}
                       aria-disabled={status === 'pending'}
-                      aria-current={isActive ? 'step' : undefined}
+                      aria-current={
+                        isActive ? 'step' : undefined
+                      }
                       aria-label={`${layer.id}. ${layer.title} — ${statusLabel.toLowerCase()}`}
                     >
                       <span className="phase-rail-number">
                         {num}
+
                         {status === 'completed' && (
-                          <CheckCircle2 size={10} className="phase-rail-mark" />
+                          <CheckCircle2
+                            size={10}
+                            className="phase-rail-mark"
+                          />
                         )}
+
                         {status === 'failed' && (
-                          <AlertTriangle size={10} className="phase-rail-mark" />
+                          <AlertTriangle
+                            size={10}
+                            className="phase-rail-mark"
+                          />
                         )}
                       </span>
 
-                      <span className="phase-rail-tooltip" role="tooltip">
-                        <span className="phase-tooltip-number">{num}</span>
+                      <span
+                        className="phase-rail-tooltip"
+                        role="tooltip"
+                      >
+                        <span className="phase-tooltip-number">
+                          {num}
+                        </span>
 
                         <span className="phase-tooltip-content">
                           <span className="phase-tooltip-title">
@@ -721,8 +907,6 @@ export default function WorkbenchPage({
           padding-bottom: 28px;
         }
 
-        /* ── HEADER ── */
-
         .investigation-heading {
           padding: 8px 2px 6px;
         }
@@ -750,17 +934,16 @@ export default function WorkbenchPage({
           font-family: monospace;
         }
 
-        /* ── WORKBENCH + FIXED PHASE RAIL ── */
-
         .workbench-with-phase-rail {
           --phase-rail-width: 46px;
           --phase-rail-right: 20px;
-          --phase-rail-top: 96px; /* match your app header height */
+          --phase-rail-top: 96px;
           --phase-node: 34px;
 
           display: grid;
-          /* The empty column is a spacer: the rail itself is fixed, out of flow */
-          grid-template-columns: minmax(0, 1fr) var(--phase-rail-width);
+          grid-template-columns:
+            minmax(0, 1fr)
+            var(--phase-rail-width);
           column-gap: 18px;
           align-items: start;
           min-width: 0;
@@ -785,7 +968,6 @@ export default function WorkbenchPage({
           pointer-events: auto;
         }
 
-        /* Connector line + progress fill */
         .phase-rail-line {
           position: absolute;
           left: 50%;
@@ -816,7 +998,6 @@ export default function WorkbenchPage({
           gap: clamp(4px, 1.5vh, 10px);
         }
 
-        /* Node: 34px hit target, 30px visual box */
         .phase-rail-node {
           position: relative;
           width: var(--phase-node);
@@ -855,7 +1036,6 @@ export default function WorkbenchPage({
             box-shadow 140ms ease;
         }
 
-        /* Corner glyph: status is not conveyed by color alone */
         .phase-rail-mark {
           position: absolute;
           top: -5px;
@@ -869,6 +1049,7 @@ export default function WorkbenchPage({
           color: var(--status-success);
           border-color: rgba(46, 125, 50, 0.65);
         }
+
         .phase-rail-node-completed .phase-rail-mark {
           color: var(--status-success);
         }
@@ -877,6 +1058,7 @@ export default function WorkbenchPage({
           color: var(--status-error);
           border-color: rgba(211, 47, 47, 0.7);
         }
+
         .phase-rail-node-failed .phase-rail-mark {
           color: var(--status-error);
         }
@@ -891,20 +1073,26 @@ export default function WorkbenchPage({
           opacity: 0.65;
         }
 
-        /* Active = where you are (independent of status) */
         .phase-rail-node-active .phase-rail-number {
           background: var(--bg-secondary);
           border-color: var(--text-primary);
-          box-shadow: 0 0 0 3px var(--bg-primary), 0 0 0 4px var(--border-color);
+          box-shadow:
+            0 0 0 3px var(--bg-primary),
+            0 0 0 4px var(--border-color);
         }
-        .phase-rail-node-active.phase-rail-node-completed .phase-rail-number {
+
+        .phase-rail-node-active.phase-rail-node-completed
+          .phase-rail-number {
           border-color: var(--status-success);
         }
-        .phase-rail-node-active.phase-rail-node-failed .phase-rail-number {
+
+        .phase-rail-node-active.phase-rail-node-failed
+          .phase-rail-number {
           border-color: var(--status-error);
         }
 
-        .phase-rail-node:not(.phase-rail-node-pending):hover .phase-rail-number {
+        .phase-rail-node:not(.phase-rail-node-pending):hover
+          .phase-rail-number {
           background: var(--bg-secondary);
           color: var(--text-primary);
         }
@@ -912,17 +1100,23 @@ export default function WorkbenchPage({
         .phase-rail-node:focus-visible {
           outline: none;
         }
+
         .phase-rail-node:focus-visible .phase-rail-number {
           outline: 2px solid var(--text-secondary);
           outline-offset: 3px;
         }
 
         @keyframes phase-pulse {
-          0%   { box-shadow: 0 0 0 0 rgba(245, 124, 0, 0.35); }
-          100% { box-shadow: 0 0 0 7px rgba(245, 124, 0, 0); }
-        }
+          0% {
+            box-shadow:
+              0 0 0 0 rgba(245, 124, 0, 0.35);
+          }
 
-        /* ── Tooltip (opens to the left of the rail) ── */
+          100% {
+            box-shadow:
+              0 0 0 7px rgba(245, 124, 0, 0);
+          }
+        }
 
         .phase-rail-tooltip {
           position: absolute;
@@ -944,7 +1138,9 @@ export default function WorkbenchPage({
           opacity: 0;
           visibility: hidden;
           pointer-events: none;
-          transition: opacity 120ms ease, visibility 120ms ease;
+          transition:
+            opacity 120ms ease,
+            visibility 120ms ease;
         }
 
         .phase-rail-tooltip::after {
@@ -961,7 +1157,8 @@ export default function WorkbenchPage({
         }
 
         .phase-rail-node:hover .phase-rail-tooltip,
-        .phase-rail-node:focus-visible .phase-rail-tooltip {
+        .phase-rail-node:focus-visible
+          .phase-rail-tooltip {
           opacity: 1;
           visibility: visible;
         }
@@ -1003,16 +1200,28 @@ export default function WorkbenchPage({
           letter-spacing: 0.7px;
           color: var(--text-secondary);
         }
-        .phase-rail-node-completed .phase-tooltip-status { color: var(--status-success); }
-        .phase-rail-node-failed .phase-tooltip-status    { color: var(--status-error); }
-        .phase-rail-node-current .phase-tooltip-status   { color: var(--status-warning); }
 
-        /* Touch devices have no hover, so tooltips are dead weight there */
-        @media (hover: none) {
-          .phase-rail-tooltip { display: none; }
+        .phase-rail-node-completed
+          .phase-tooltip-status {
+          color: var(--status-success);
         }
 
-        /* Compact rail on small screens; it stays on the right */
+        .phase-rail-node-failed
+          .phase-tooltip-status {
+          color: var(--status-error);
+        }
+
+        .phase-rail-node-current
+          .phase-tooltip-status {
+          color: var(--status-warning);
+        }
+
+        @media (hover: none) {
+          .phase-rail-tooltip {
+            display: none;
+          }
+        }
+
         @media (max-width: 900px) {
           .workbench-with-phase-rail {
             --phase-rail-width: 38px;
@@ -1020,6 +1229,7 @@ export default function WorkbenchPage({
             --phase-node: 30px;
             column-gap: 12px;
           }
+
           .phase-rail-number {
             width: 26px;
             height: 26px;
@@ -1028,13 +1238,17 @@ export default function WorkbenchPage({
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .phase-rail-node-current .phase-rail-number { animation: none; }
+          .phase-rail-node-current
+            .phase-rail-number {
+            animation: none;
+          }
+
           .phase-rail-line-fill,
           .phase-rail-number,
-          .phase-rail-tooltip { transition: none; }
+          .phase-rail-tooltip {
+            transition: none;
+          }
         }
-
-        /* ── VERTICAL LAYERS ── */
 
         .investigation-layers {
           display: flex;

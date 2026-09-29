@@ -6,7 +6,11 @@ Executes the full Jocky compiler pipeline and returns rich telemetry.
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.responses import FileResponse
 
+import zipfile
+import re
+import re
 import subprocess
 import uuid
 import os
@@ -120,7 +124,129 @@ async def get_example(filename: str):
         "source": source,
     }
 
+def generate_investigation_id(jocky_source: str) -> str:
+    match = re.search(
+        r'investigation\s+"([^"]+)"',
+        jocky_source or "",
+        re.IGNORECASE,
+    )
 
+    investigation_name = (
+        match.group(1).strip()
+        if match
+        else "Investigation"
+    )
+
+    slug = re.sub(
+        r"[^A-Za-z0-9]+",
+        "-",
+        investigation_name,
+    ).strip("-")
+
+    slug = slug[:48] or "Investigation"
+
+    suffix = uuid.uuid4().hex[:6].upper()
+
+    return f"{slug}-{suffix}"
+
+def get_investigation_artifact_paths(investigation_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9-]+", investigation_id):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID.")
+
+    evidence_path = Path("out/evidence") / f"{investigation_id}_sealed.json"
+    stix_path = Path("out/evidence") / f"{investigation_id}_stix.json"
+
+    return evidence_path, stix_path
+
+
+@app.get("/api/v1/investigations/{investigation_id}/evidence")
+async def get_investigation_evidence(investigation_id: str):
+    """Open/download the sealed evidence vault for an investigation."""
+    evidence_path, _ = get_investigation_artifact_paths(investigation_id)
+
+    if not evidence_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Sealed evidence artifact not found."
+        )
+
+    return FileResponse(
+        path=evidence_path,
+        media_type="application/json",
+        filename=f"{investigation_id}_sealed.json",
+    )
+
+def get_investigation_artifact_paths(investigation_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9-]+", investigation_id):
+        raise HTTPException(status_code=400, detail="Invalid investigation ID.")
+
+    evidence_path = Path("out/evidence") / f"{investigation_id}_sealed.json"
+    stix_path = Path("out/evidence") / f"{investigation_id}_stix.json"
+
+    return evidence_path, stix_path
+
+@app.get("/api/v1/investigations/{investigation_id}/stix")
+async def get_investigation_stix(investigation_id: str):
+    """Open/download the STIX 2.1 bundle for an investigation."""
+    _, stix_path = get_investigation_artifact_paths(investigation_id)
+
+    if not stix_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="STIX artifact not found."
+        )
+
+    return FileResponse(
+        path=stix_path,
+        media_type="application/json",
+        filename=f"{investigation_id}_stix.json",
+    )
+
+
+@app.get("/api/v1/investigations/{investigation_id}/export")
+async def export_investigation(investigation_id: str):
+    """
+    Export the main investigation artifacts as a ZIP archive.
+    Includes sealed evidence and STIX 2.1 output.
+    """
+    evidence_path, stix_path = get_investigation_artifact_paths(investigation_id)
+
+    if not evidence_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Sealed evidence artifact not found."
+        )
+
+    if not stix_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="STIX artifact not found."
+        )
+
+    export_dir = Path("out/exports")
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_path = export_dir / f"{investigation_id}_export.zip"
+
+    with zipfile.ZipFile(
+        zip_path,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        archive.write(
+            evidence_path,
+            arcname=f"{investigation_id}_sealed.json",
+        )
+        archive.write(
+            stix_path,
+            arcname=f"{investigation_id}_stix.json",
+        )
+
+    return FileResponse(
+        path=zip_path,
+        media_type="application/zip",
+        filename=f"{investigation_id}_export.zip",
+    )
 # ---------------------------------------------------------------------------
 # Investigation Orchestration
 # ---------------------------------------------------------------------------
@@ -130,7 +256,7 @@ async def orchestrate_investigation(req: InvestigationRequest):
     os.makedirs("out/instructions", exist_ok=True)
     os.makedirs("out/evidence", exist_ok=True)
 
-    inv_id = f"NTRO-Sweep-{uuid.uuid4().hex[:6].upper()}"
+    inv_id = generate_investigation_id(req.jocky_source)
 
     jocky_file = f"out/{inv_id}.jocky"
     contract_file = f"out/instructions/{inv_id}.json"

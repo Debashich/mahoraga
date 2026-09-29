@@ -11,7 +11,6 @@ import {
   ChevronDown,
   Upload,
 } from 'lucide-react';
-
 const CAPABILITY_OPTIONS = [
   {
     id: 'process_list',
@@ -96,12 +95,12 @@ export default function JockyEditorPanel({
 
         const files = Array.isArray(data.files)
           ? data.files
-              .filter(
-                (file) =>
-                  typeof file === 'string' &&
-                  file.toLowerCase().endsWith('.jocky')
-              )
-              .sort((a, b) => a.localeCompare(b))
+            .filter(
+              (file) =>
+                typeof file === 'string' &&
+                file.toLowerCase().endsWith('.jocky')
+            )
+            .sort((a, b) => a.localeCompare(b))
           : [];
 
         if (!cancelled) {
@@ -254,14 +253,14 @@ export default function JockyEditorPanel({
 
       const files = Array.isArray(treeData.tree)
         ? treeData.tree
-            .filter(
-              (item) =>
-                item.type === 'blob' &&
-                typeof item.path === 'string' &&
-                item.path.toLowerCase().endsWith('.jocky')
-            )
-            .map((item) => item.path)
-            .sort((a, b) => a.localeCompare(b))
+          .filter(
+            (item) =>
+              item.type === 'blob' &&
+              typeof item.path === 'string' &&
+              item.path.toLowerCase().endsWith('.jocky')
+          )
+          .map((item) => item.path)
+          .sort((a, b) => a.localeCompare(b))
         : [];
 
       if (files.length === 0) {
@@ -386,9 +385,9 @@ export default function JockyEditorPanel({
           <span>Jocky DSL Editor</span>
         </div>
 
-        
+
         <div className="editor-actions">
-          
+
           {/* Demo */}
           <div className="source-menu">
             <button
@@ -416,9 +415,8 @@ export default function JockyEditorPanel({
                   demoFiles.map((file) => (
                     <button
                       key={file}
-                      className={`source-option ${
-                        selectedDemo === file ? 'active' : ''
-                      }`}
+                      className={`source-option ${selectedDemo === file ? 'active' : ''
+                        }`}
                       onClick={() => handleLoadDemo(file)}
                       type="button"
                     >
@@ -503,9 +501,8 @@ export default function JockyEditorPanel({
                     {githubFiles.map((file) => (
                       <button
                         key={file}
-                        className={`source-option ${
-                          selectedGithubFile === file ? 'active' : ''
-                        }`}
+                        className={`source-option ${selectedGithubFile === file ? 'active' : ''
+                          }`}
                         onClick={() => handleLoadGithubFile(file)}
                         type="button"
                       >

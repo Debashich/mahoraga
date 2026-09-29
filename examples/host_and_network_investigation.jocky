@@ -1,0 +1,11 @@
+investigation "Host Network Investigation" {
+    collect system_info as host
+    collect process_list as procs
+    collect network_connections as conns
+
+    correlate procs with host
+    correlate conns with host
+    correlate procs with conns
+
+    emit evidence
+}

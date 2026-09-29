@@ -1,9 +1,0 @@
-investigation "Suspicious Host Sweep" {
-    collect system_info as host
-    collect process_list as procs
-    collect network_connections as conns
-
-    correlate procs, conns
-
-    emit evidence
-}
