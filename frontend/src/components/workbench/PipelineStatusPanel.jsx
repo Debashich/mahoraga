@@ -8,17 +8,61 @@ import {
   Loader2,
   AlertTriangle,
   Check,
+  CheckCircle2,
   Circle,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
 
 const PIPELINE_STAGE_META_BASE = [
-  { id: 'compiler', name: 'Jocky Compiler (IR)', icon: Terminal, desc: 'Lexer & Parser tokenization' },
-  { id: 'obfuscator', name: 'Polymorphic Encryption', icon: Lock, desc: 'Encrypted .enc payload generation' },
-  { id: 'runtime', name: 'Native C++ Runtime', icon: Cpu, desc: null },
-  { id: 'sealing', name: 'Evidence Sealing', icon: ShieldCheck, desc: 'SHA-256 cryptographic seal' },
-  { id: 'stix', name: 'STIX 2.1 Generation', icon: GitCommit, desc: 'Threat intelligence bundle' },
+  {
+    id: 'parse',
+    name: 'Jocky DSL Parsing',
+    icon: Terminal,
+    desc: 'Lexer, parser & AST generation',
+  },
+  {
+    id: 'semantic',
+    name: 'Semantic Validation',
+    icon: CheckCircle2,
+    desc: 'Validate investigation semantics',
+  },
+  {
+    id: 'capability',
+    name: 'Capability Resolution',
+    icon: ShieldCheck,
+    desc: 'Resolve requested forensic capabilities',
+  },
+  {
+    id: 'ir',
+    name: 'Forensic IR Compilation',
+    icon: GitCommit,
+    desc: 'Generate normalized Forensic IR',
+  },
+  {
+    id: 'obfuscator',
+    name: 'Polymorphic Encryption',
+    icon: Lock,
+    desc: 'Encrypted .enc payload generation',
+  },
+  {
+    id: 'runtime',
+    name: 'Native C++ Runtime',
+    icon: Cpu,
+    desc: null,
+  },
+  {
+    id: 'sealing',
+    name: 'Evidence Sealing',
+    icon: ShieldCheck,
+    desc: 'SHA-256 cryptographic seal',
+  },
+  {
+    id: 'stix',
+    name: 'STIX 2.1 Generation',
+    icon: GitCommit,
+    desc: 'Threat intelligence bundle',
+  },
 ];
 
 export default function PipelineStatusPanel({
@@ -39,6 +83,21 @@ export default function PipelineStatusPanel({
       ? { ...meta, desc: `${targetPlatform} Provider execution` }
       : meta
   );
+
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'PASSED';
+      case 'running':
+        return 'RUNNING';
+      case 'failed':
+        return 'FAILED';
+      case 'blocked':
+        return 'BLOCKED';
+      default:
+        return 'PENDING';
+    }
+  };
 
   const getStatusForStage = (stageId) => {
     const match = pipelineStages.find(s => s.id === stageId);
@@ -97,20 +156,6 @@ export default function PipelineStatusPanel({
         <div className="panel-title">
           <GitCommit size={14} />
           <span>INVESTIGATION PIPELINE</span>
-        </div>
-
-        <div className="pipeline-header-actions">
-          <span className={`badge ${cmiConnected ? 'badge-emerald' : 'badge-warning'}`}>
-            {cmiConnected ? 'CMI: LIVE' : 'CMI: OFFLINE'}
-          </span>
-          <button
-            className="btn btn-primary"
-            onClick={onTriggerOrchestration}
-            disabled={isOrchestrating}
-          >
-            {isOrchestrating ? <Loader2 size={12} className="spin" /> : <GitCommit size={12} />}
-            {isOrchestrating ? 'Executing...' : '⚡ Compile & Execute'}
-          </button>
         </div>
       </div>
 
@@ -276,11 +321,20 @@ export default function PipelineStatusPanel({
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 5px 12px;
-          font-size: 11.5px;
+          padding: 8px 12px;  
+          font-size: 12px;
+          font-weight: 400;
+          letter-spacing: 0.25px;
+          border: 1px solid transparent;
           border-bottom: 1px solid rgba(51, 51, 51, 0.4);
-          transition: background 0.2s ease;
+          transition: background 0.15s ease, border-color 0.15s ease;
         }
+
+        .checklist-status-label {
+          margin-left: auto;
+          white-space: nowrap;
+        }
+
 
         .checklist-row:last-child {
           border-bottom: none;

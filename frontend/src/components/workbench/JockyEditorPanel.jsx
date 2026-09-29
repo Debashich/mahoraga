@@ -590,7 +590,7 @@ export default function JockyEditorPanel({
           className="editor-textarea"
           value={source}
           onChange={(e) => onChangeSource(e.target.value)}
-          placeholder="// Type Jocky DSL source code here..."
+          placeholder="//Paste your Jocky code here..."
           spellCheck={false}
           readOnly={isOrchestrating}
         />

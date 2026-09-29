@@ -296,11 +296,7 @@ async def orchestrate_investigation(req: InvestigationRequest):
         )
 
     else:
-        runtime_binary = (
-            "./build/mahoraga-run"
-            if os.path.exists("./build/mahoraga-run")
-            else "./build/odin-run"
-        )
+        runtime_binary = "./build/mahoraga-run"
 
     # -----------------------------------------------------------------------
     # Child process environment
