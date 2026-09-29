@@ -1,55 +1,58 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
 import {
   Code2,
   Play,
-  FileCode,
   PlusCircle,
   Check,
   Loader2,
-  GitCommit
+  GitCommit,
+  Monitor,
+  ChevronDown,
+  Upload,
 } from 'lucide-react';
 
 const CAPABILITY_OPTIONS = [
   {
     id: 'process_list',
     alias: 'procs',
-    desc: 'Process execution & metadata'
+    desc: 'Process execution & metadata',
   },
   {
     id: 'system_info',
     alias: 'sys',
-    desc: 'Host identity & OS details'
+    desc: 'Host identity & OS details',
   },
   {
     id: 'network_connections',
     alias: 'conns',
-    desc: 'Sockets & network links'
+    desc: 'Sockets & network links',
   },
   {
     id: 'users',
     alias: 'local_users',
-    desc: 'User accounts & privileges'
+    desc: 'User accounts & privileges',
   },
   {
     id: 'auth_logs',
     alias: 'auth',
-    desc: 'Login & authentication events'
+    desc: 'Login & authentication events',
   },
   {
     id: 'file_metadata',
     alias: 'files',
-    desc: 'FileSystem evidence & hashes'
+    desc: 'FileSystem evidence & hashes',
   },
   {
     id: 'memory_snapshot',
     alias: 'mem',
-    desc: 'Process memory acquisition'
+    desc: 'Process memory acquisition',
   },
   {
     id: 'driver_scan',
     alias: 'drivers',
-    desc: 'Kernel driver module scan'
-  }
+    desc: 'Kernel driver module scan',
+  },
 ];
 
 export default function JockyEditorPanel({
@@ -57,29 +60,36 @@ export default function JockyEditorPanel({
   onChangeSource,
   onRunPreflight,
   onRunInvestigation,
-  isOrchestrating
+  isOrchestrating,
 }) {
-  const [exampleFiles, setExampleFiles] = useState([]);
-  const [selectedExample, setSelectedExample] = useState('');
-  const [isLoadingExamples, setIsLoadingExamples] = useState(true);
-  const [exampleError, setExampleError] = useState('');
+  const [sourceMenu, setSourceMenu] = useState(null);
+
+  const [demoFiles, setDemoFiles] = useState([]);
+  const [selectedDemo, setSelectedDemo] = useState('');
+
+  const [githubUrl, setGithubUrl] = useState('');
+  const [githubFiles, setGithubFiles] = useState([]);
+  const [selectedGithubFile, setSelectedGithubFile] = useState('');
+  const [githubLoading, setGithubLoading] = useState(false);
+
+  const [sourceStatus, setSourceStatus] = useState('');
   const [insertedFeedback, setInsertedFeedback] = useState('');
 
-  /*
-   * Load all available .jocky examples from the backend.
-   */
-  useEffect(() => {
-    const loadExamples = async () => {
-      setIsLoadingExamples(true);
-      setExampleError('');
+  const fileInputRef = useRef(null);
 
+  // ---------------------------------------------------------------------------
+  // Demo source
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDemoFiles = async () => {
       try {
         const response = await fetch('/api/v1/examples');
 
         if (!response.ok) {
-          throw new Error(
-            `Failed to load examples: ${response.status}`
-          );
+          throw new Error(`HTTP ${response.status}`);
         }
 
         const data = await response.json();
@@ -91,105 +101,261 @@ export default function JockyEditorPanel({
                   typeof file === 'string' &&
                   file.toLowerCase().endsWith('.jocky')
               )
-              .sort()
+              .sort((a, b) => a.localeCompare(b))
           : [];
 
-        setExampleFiles(files);
-
-        /*
-         * Automatically load the first available example.
-         */
-        if (files.length > 0) {
-          setSelectedExample(files[0]);
-          await loadExample(files[0]);
+        if (!cancelled) {
+          setDemoFiles(files);
+          if (files.length > 0) {
+            setSelectedDemo(files[0]);
+          }
         }
       } catch (error) {
-        console.error(
-          'Failed to load Jocky examples:',
-          error
-        );
-
-        setExampleFiles([]);
-        setSelectedExample('');
-        setExampleError(
-          'Unable to load examples from the backend.'
-        );
-      } finally {
-        setIsLoadingExamples(false);
+        console.error('Failed to load Jocky examples:', error);
+        if (!cancelled) {
+          setDemoFiles([]);
+        }
       }
     };
 
-    loadExamples();
+    loadDemoFiles();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  /*
-   * Load the contents of a specific .jocky example.
-   */
-  const loadExample = async (filename) => {
+  const handleLoadDemo = async (filename) => {
     if (!filename) return;
 
     try {
+      setSourceStatus(`Loading ${filename}...`);
+
       const response = await fetch(
         `/api/v1/examples/${encodeURIComponent(filename)}`
       );
 
       if (!response.ok) {
-        throw new Error(
-          `Failed to load ${filename}: ${response.status}`
-        );
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
 
-      setSelectedExample(filename);
       onChangeSource(data.source || '');
-    } catch (error) {
-      console.error(
-        `Failed to load Jocky example "${filename}":`,
-        error
-      );
+      setSelectedDemo(filename);
+      setSourceStatus(`Loaded demo: ${filename}`);
+      setSourceMenu(null);
 
-      setExampleError(
-        `Unable to load ${filename}.`
-      );
+      window.setTimeout(() => setSourceStatus(''), 2500);
+    } catch (error) {
+      console.error('Failed to load demo:', error);
+      setSourceStatus(`Failed to load ${filename}`);
     }
   };
 
-  const handleLoadExample = (event) => {
-    const filename = event.target.value;
+  // ---------------------------------------------------------------------------
+  // Device source
+  // ---------------------------------------------------------------------------
 
-    if (!filename) {
-      setSelectedExample('');
-      onChangeSource('');
+  const handleDeviceFile = async (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.jocky')) {
+      setSourceStatus('Please select a .jocky file.');
+      event.target.value = '';
       return;
     }
 
-    loadExample(filename);
+    try {
+      const text = await file.text();
+
+      onChangeSource(text);
+      setSourceStatus(`Loaded from device: ${file.name}`);
+
+      window.setTimeout(() => setSourceStatus(''), 2500);
+    } catch (error) {
+      console.error('Failed to read local Jocky file:', error);
+      setSourceStatus(`Failed to read ${file.name}`);
+    }
+
+    event.target.value = '';
   };
+
+  // ---------------------------------------------------------------------------
+  // GitHub source
+  // ---------------------------------------------------------------------------
+
+  const parseGithubUrl = (url) => {
+    try {
+      const parsed = new URL(url.trim());
+
+      if (parsed.hostname.toLowerCase() !== 'github.com') {
+        return null;
+      }
+
+      const parts = parsed.pathname
+        .replace(/^\/+|\/+$/g, '')
+        .split('/');
+
+      if (parts.length < 2) return null;
+
+      const owner = parts[0];
+      const repo = parts[1].replace(/\.git$/, '');
+
+      if (!owner || !repo) return null;
+
+      return { owner, repo };
+    } catch {
+      return null;
+    }
+  };
+
+  const handleGithubImport = async () => {
+    const repoInfo = parseGithubUrl(githubUrl);
+
+    if (!repoInfo) {
+      setSourceStatus('Enter a valid public GitHub repository URL.');
+      return;
+    }
+
+    setGithubLoading(true);
+    setGithubFiles([]);
+    setSelectedGithubFile('');
+
+    try {
+      const repoResponse = await fetch(
+        `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}`
+      );
+
+      if (!repoResponse.ok) {
+        throw new Error(
+          `Repository not found or GitHub API returned ${repoResponse.status}.`
+        );
+      }
+
+      const repoData = await repoResponse.json();
+      const defaultBranch = repoData.default_branch;
+
+      const treeResponse = await fetch(
+        `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/git/trees/${encodeURIComponent(
+          defaultBranch
+        )}?recursive=1`
+      );
+
+      if (!treeResponse.ok) {
+        throw new Error(
+          `Could not read repository tree (${treeResponse.status}).`
+        );
+      }
+
+      const treeData = await treeResponse.json();
+
+      const files = Array.isArray(treeData.tree)
+        ? treeData.tree
+            .filter(
+              (item) =>
+                item.type === 'blob' &&
+                typeof item.path === 'string' &&
+                item.path.toLowerCase().endsWith('.jocky')
+            )
+            .map((item) => item.path)
+            .sort((a, b) => a.localeCompare(b))
+        : [];
+
+      if (files.length === 0) {
+        setSourceStatus('No .jocky files found in this repository.');
+        return;
+      }
+
+      setGithubFiles(files);
+      setSourceStatus(
+        `Found ${files.length} Jocky file${files.length === 1 ? '' : 's'}.`
+      );
+    } catch (error) {
+      console.error('GitHub import failed:', error);
+      setSourceStatus(
+        error.message || 'Failed to import GitHub repository.'
+      );
+    } finally {
+      setGithubLoading(false);
+    }
+  };
+
+  const handleLoadGithubFile = async (path) => {
+    if (!path) return;
+
+    const repoInfo = parseGithubUrl(githubUrl);
+
+    if (!repoInfo) return;
+
+    try {
+      setSourceStatus(`Loading ${path}...`);
+
+      const repoResponse = await fetch(
+        `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}`
+      );
+
+      if (!repoResponse.ok) {
+        throw new Error(
+          `Repository metadata unavailable (${repoResponse.status}).`
+        );
+      }
+
+      const repoData = await repoResponse.json();
+      const defaultBranch = repoData.default_branch;
+
+      const rawUrl =
+        `https://raw.githubusercontent.com/` +
+        `${repoInfo.owner}/${repoInfo.repo}/` +
+        `${encodeURIComponent(defaultBranch)}/` +
+        `${path
+          .split('/')
+          .map((part) => encodeURIComponent(part))
+          .join('/')}`;
+
+      const fileResponse = await fetch(rawUrl);
+
+      if (!fileResponse.ok) {
+        throw new Error(`Could not load ${path} (${fileResponse.status}).`);
+      }
+
+      const text = await fileResponse.text();
+
+      onChangeSource(text);
+      setSelectedGithubFile(path);
+      setSourceStatus(`Loaded from GitHub: ${path}`);
+      setSourceMenu(null);
+
+      window.setTimeout(() => setSourceStatus(''), 2500);
+    } catch (error) {
+      console.error('Failed to load GitHub Jocky file:', error);
+      setSourceStatus(error.message || `Failed to load ${path}`);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Capability insertion
+  // ---------------------------------------------------------------------------
 
   const handleInsertCapability = (cap) => {
     const statement = `    collect ${cap.id} as ${cap.alias}\n`;
 
     if (source.includes(`collect ${cap.id}`)) {
-      setInsertedFeedback(
-        `Already collected: ${cap.id}`
-      );
+      setInsertedFeedback(`Already collected: ${cap.id}`);
 
-      setTimeout(
-        () => setInsertedFeedback(''),
-        2000
-      );
+      window.setTimeout(() => {
+        setInsertedFeedback('');
+      }, 2000);
 
       return;
     }
 
-    const match = source.match(
-      /investigation\s+"[^"]+"\s*\{/
-    );
+    const match = source.match(/investigation\s+"[^"]+"\s*\{/);
 
     if (match) {
-      const idx =
-        match.index + match[0].length;
+      const idx = match.index + match[0].length;
 
       const newSource =
         source.slice(0, idx) +
@@ -199,19 +365,14 @@ export default function JockyEditorPanel({
 
       onChangeSource(newSource);
     } else {
-      onChangeSource(
-        source + '\n' + statement
-      );
+      onChangeSource(source + '\n' + statement);
     }
 
-    setInsertedFeedback(
-      `Inserted: collect ${cap.id}`
-    );
+    setInsertedFeedback(`Inserted: collect ${cap.id}`);
 
-    setTimeout(
-      () => setInsertedFeedback(''),
-      2000
-    );
+    window.setTimeout(() => {
+      setInsertedFeedback('');
+    }, 2000);
   };
 
   const lineCount = source.split('\n').length;
@@ -219,118 +380,198 @@ export default function JockyEditorPanel({
 
   return (
     <div className="panel-card jocky-editor-card">
-
       <div className="panel-header">
-
         <div className="panel-title">
           <Code2 size={14} />
           <span>Jocky DSL Editor</span>
         </div>
 
+        
         <div className="editor-actions">
-
-          <div className="example-selector">
-
-            <FileCode size={12} />
-
-            <select
-              className="select-mini"
-              value={selectedExample}
-              onChange={handleLoadExample}
-              disabled={
-                isOrchestrating ||
-                isLoadingExamples
+          
+          {/* Demo */}
+          <div className="source-menu">
+            <button
+              className="btn source-btn"
+              onClick={() =>
+                setSourceMenu(sourceMenu === 'demo' ? null : 'demo')
               }
+              disabled={isOrchestrating}
+              type="button"
             >
-              {isLoadingExamples ? (
-                <option value="">
-                  Loading examples...
-                </option>
-              ) : exampleFiles.length === 0 ? (
-                <option value="">
-                  No .jocky examples found
-                </option>
-              ) : (
-                <>
-                  <option value="">
-                    Select example...
-                  </option>
+              <Code2 size={12} />
+              Demo
+              <ChevronDown size={11} />
+            </button>
 
-                  {exampleFiles.map((filename) => (
-                    <option
-                      key={filename}
-                      value={filename}
+            {sourceMenu === 'demo' && (
+              <div className="source-popover">
+                <div className="popover-title">Jocky Demo Files</div>
+
+                {demoFiles.length === 0 ? (
+                  <div className="popover-empty">
+                    No .jocky examples found.
+                  </div>
+                ) : (
+                  demoFiles.map((file) => (
+                    <button
+                      key={file}
+                      className={`source-option ${
+                        selectedDemo === file ? 'active' : ''
+                      }`}
+                      onClick={() => handleLoadDemo(file)}
+                      type="button"
                     >
-                      {filename}
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-
+                      <Code2 size={11} />
+                      <span>{file}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Device */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jocky"
+            onChange={handleDeviceFile}
+            style={{ display: 'none' }}
+          />
+
+          <button
+            className="btn source-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isOrchestrating}
+            title="Load a .jocky file from this device"
+            type="button"
+          >
+            <Monitor size={12} />
+            Device
+          </button>
+
+          {/* GitHub */}
+          <div className="source-menu">
+            <button
+              className="btn source-btn"
+              onClick={() =>
+                setSourceMenu(sourceMenu === 'github' ? null : 'github')
+              }
+              disabled={isOrchestrating}
+              type="button"
+            >
+              <Code2 size={12} />
+              GitHub
+              <ChevronDown size={11} />
+            </button>
+
+            {sourceMenu === 'github' && (
+              <div className="source-popover github-popover">
+                <div className="popover-title">
+                  Import Jocky from GitHub
+                </div>
+
+                <div className="github-input-row">
+                  <input
+                    type="text"
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                    placeholder="https://github.com/user/repo"
+                    disabled={githubLoading}
+                  />
+
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleGithubImport}
+                    disabled={githubLoading}
+                    type="button"
+                  >
+                    {githubLoading ? (
+                      <Loader2 size={12} className="spin" />
+                    ) : (
+                      <Upload size={12} />
+                    )}
+                    Import
+                  </button>
+                </div>
+
+                {githubFiles.length > 0 && (
+                  <div className="github-file-list">
+                    <div className="popover-subtitle">Jocky files found</div>
+
+                    {githubFiles.map((file) => (
+                      <button
+                        key={file}
+                        className={`source-option ${
+                          selectedGithubFile === file ? 'active' : ''
+                        }`}
+                        onClick={() => handleLoadGithubFile(file)}
+                        type="button"
+                      >
+                        <Code2 size={11} />
+                        <span>{file}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Pre-flight */}
           <button
             className="btn"
             onClick={onRunPreflight}
             disabled={isOrchestrating}
+            type="button"
           >
             <Play size={12} />
             Pre-Flight
           </button>
 
+          {/* Run */}
           <button
             className="btn btn-primary"
             onClick={onRunInvestigation}
             disabled={isOrchestrating}
+            type="button"
           >
             {isOrchestrating ? (
-              <Loader2
-                size={12}
-                className="spin"
-              />
+              <Loader2 size={12} className="spin" />
             ) : (
               <GitCommit size={12} />
             )}
 
-            {isOrchestrating
-              ? 'Running...'
-              : 'Run Investigation'}
+            {isOrchestrating ? 'Running...' : 'Run Investigation'}
           </button>
-
         </div>
-
       </div>
 
-      {exampleError && (
-        <div className="example-error">
-          {exampleError}
+      {sourceStatus && (
+        <div className="source-status">
+          <Check size={10} />
+          <span>{sourceStatus}</span>
         </div>
       )}
 
       <div className="editor-quickbar">
-
-        <span className="quickbar-label">
-          INSERT CAPABILITY:
-        </span>
+        <span className="quickbar-label">INSERT CAPABILITY:</span>
 
         <div className="capability-chips">
-
           {CAPABILITY_OPTIONS.map((cap) => (
             <button
               key={cap.id}
               className="cap-chip"
-              onClick={() =>
-                handleInsertCapability(cap)
-              }
+              onClick={() => handleInsertCapability(cap)}
               title={cap.desc}
               disabled={isOrchestrating}
+              type="button"
             >
               <PlusCircle size={10} />
               <span>{cap.id}</span>
             </button>
           ))}
-
         </div>
 
         {insertedFeedback && (
@@ -339,101 +580,181 @@ export default function JockyEditorPanel({
             {insertedFeedback}
           </span>
         )}
-
       </div>
 
       <div className="editor-container">
-
         <div className="line-numbers">
-
-          {Array.from({
-            length: lineCount
-          }).map((_, i) => (
-            <span key={i + 1}>
-              {i + 1}
-            </span>
+          {Array.from({ length: lineCount }).map((_, i) => (
+            <span key={i + 1}>{i + 1}</span>
           ))}
-
         </div>
 
         <textarea
           className="editor-textarea"
           value={source}
-          onChange={(e) =>
-            onChangeSource(e.target.value)
-          }
+          onChange={(e) => onChangeSource(e.target.value)}
           placeholder="// Type Jocky DSL source code here..."
           spellCheck={false}
           readOnly={isOrchestrating}
         />
-
       </div>
 
       <div className="editor-footer">
-
         <span>
           Lines: {lineCount} | Chars: {charCount}
         </span>
 
-        <span className="lang-tag">
-          Syntax: Jocky DSL v1
-        </span>
-
+        <span className="lang-tag">Syntax: Jocky DSL v1</span>
       </div>
 
       <style>{`
-
         .jocky-editor-card {
           height: 100%;
-          min-height: 400px;
+          min-height: 560px;
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          overflow: visible;
         }
 
         .editor-actions {
           display: flex;
           align-items: center;
+          justify-content: flex-end;
           gap: 6px;
+          flex-wrap: wrap;
         }
 
-        .example-selector {
+        .source-menu {
+          position: relative;
+        }
+
+        .source-btn {
           display: flex;
           align-items: center;
           gap: 4px;
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-          padding: 2px 6px;
+          white-space: nowrap;
         }
 
-        .select-mini {
-          background: transparent;
-          border: none;
-          color: var(--text-primary);
-          font-size: 10.5px;
-          outline: none;
-          cursor: pointer;
-          min-width: 130px;
-        }
-
-        .select-mini option {
+        .source-popover {
+          position: absolute;
+          top: calc(100% + 5px);
+          right: 0;
+          z-index: 1000;
+          min-width: 230px;
+          max-width: 360px;
           background: var(--bg-secondary);
-          color: var(--text-primary);
+          border: 1px solid var(--border-color);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+          padding: 6px;
         }
 
-        .example-error {
-          padding: 6px 10px;
-          background: var(--bg-primary);
+        .github-popover {
+          width: 390px;
+          max-width: min(390px, calc(100vw - 32px));
+        }
+
+        .popover-title {
+          padding: 6px 7px;
+          margin-bottom: 4px;
+          color: var(--text-primary);
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
           border-bottom: 1px solid var(--border-color);
+        }
+
+        .popover-subtitle {
+          padding: 6px 7px 4px;
+          color: var(--text-muted);
+          font-size: 9px;
+          font-weight: 700;
+          text-transform: uppercase;
+        }
+
+        .popover-empty {
+          padding: 10px 8px;
           color: var(--text-muted);
           font-size: 10px;
         }
 
+        .source-option {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 7px 8px;
+          background: transparent;
+          border: none;
+          color: var(--text-secondary);
+          font-size: 10.5px;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .source-option:hover,
+        .source-option.active {
+          background: var(--bg-tertiary);
+          color: var(--text-primary);
+        }
+
+        .source-option span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .github-input-row {
+          display: flex;
+          gap: 5px;
+          padding: 5px;
+        }
+
+        .github-input-row input {
+          flex: 1;
+          min-width: 0;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          color: var(--text-primary);
+          padding: 6px 7px;
+          font-size: 10px;
+          outline: none;
+        }
+
+        .github-input-row input:focus {
+          border-color: var(--accent);
+        }
+
+        .github-file-list {
+          border-top: 1px solid var(--border-color);
+          margin-top: 4px;
+          padding-top: 2px;
+          max-height: 220px;
+          overflow-y: auto;
+        }
+
+        .source-status {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          padding: 4px 10px;
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border-color);
+          color: var(--text-secondary);
+          font-size: 9.5px;
+          min-height: 22px;
+        }
+
         .editor-quickbar {
-          padding: 6px 10px;
+          padding: 7px 10px;
           background: var(--bg-primary);
           border-bottom: 1px solid var(--border-color);
           display: flex;
           align-items: center;
           gap: 8px;
           overflow-x: auto;
+          flex-shrink: 0;
         }
 
         .quickbar-label {
@@ -457,11 +778,11 @@ export default function JockyEditorPanel({
           background: var(--bg-tertiary);
           border: 1px solid var(--border-color);
           color: var(--text-secondary);
-          padding: 2px 6px;
-          border-radius: 0px;
+          padding: 3px 7px;
+          border-radius: 0;
           font-size: 10px;
           cursor: pointer;
-          transition: border-color 0.15s ease;
+          transition: border-color 0.15s ease, color 0.15s ease;
         }
 
         .cap-chip:hover:not(:disabled) {
@@ -484,7 +805,8 @@ export default function JockyEditorPanel({
         }
 
         .editor-container {
-          flex: 1;
+          flex: 1 1 auto;
+          min-height: 360px;
           display: flex;
           background: var(--bg-primary);
           font-size: 12.5px;
@@ -494,7 +816,7 @@ export default function JockyEditorPanel({
         }
 
         .line-numbers {
-          padding: 10px 8px;
+          padding: 12px 8px;
           background: var(--bg-secondary);
           color: var(--text-muted);
           text-align: right;
@@ -502,33 +824,49 @@ export default function JockyEditorPanel({
           display: flex;
           flex-direction: column;
           border-right: 1px solid var(--border-color);
-          min-width: 36px;
+          min-width: 38px;
           font-size: 11px;
+          flex-shrink: 0;
+        }
+
+        .line-numbers span {
+          height: 20px;
+          line-height: 20px;
         }
 
         .editor-textarea {
-          flex: 1;
+          flex: 1 1 auto;
+          width: 100%;
+          min-width: 0;
+          min-height: 100%;
           background: transparent;
           border: none;
           color: var(--text-primary);
-          padding: 10px 12px;
+          padding: 12px 14px;
           font-size: 12.5px;
-          line-height: 1.6;
+          line-height: 20px;
           resize: none;
           outline: none;
           white-space: pre;
           overflow-wrap: normal;
-          overflow-x: auto;
+          overflow: auto;
+          tab-size: 2;
+        }
+
+        .editor-textarea::selection {
+          background: rgba(120, 120, 255, 0.22);
         }
 
         .editor-footer {
-          padding: 4px 10px;
+          padding: 5px 10px;
           background: var(--bg-secondary);
           border-top: 1px solid var(--border-color);
           display: flex;
           justify-content: space-between;
+          gap: 12px;
           font-size: 9.5px;
           color: var(--text-muted);
+          flex-shrink: 0;
         }
 
         .lang-tag {
@@ -549,8 +887,39 @@ export default function JockyEditorPanel({
           }
         }
 
-      `}</style>
+        @media (max-width: 900px) {
+          .jocky-editor-card {
+            min-height: 500px;
+          }
 
+          .panel-header {
+            align-items: flex-start;
+          }
+
+          .editor-actions {
+            justify-content: flex-start;
+          }
+        }
+
+        @media (max-width: 620px) {
+          .github-popover {
+            position: fixed;
+            top: 64px;
+            right: 16px;
+            left: 16px;
+            width: auto;
+          }
+
+          .source-popover {
+            max-width: calc(100vw - 32px);
+          }
+
+          .editor-quickbar {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -100,7 +100,7 @@ Access the **Jocky Forensic Workbench** at:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
-
+uvicorn cmi.server:app --host 0.0.0.0 --port 8000
 ```
 
 ### 2. Native Runtime Build
