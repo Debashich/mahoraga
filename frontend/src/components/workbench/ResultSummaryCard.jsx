@@ -9,15 +9,22 @@ import {
   Lock,
   Download,
   ExternalLink,
-  Cpu, 
+  Cpu,
   Radio
 } from 'lucide-react';
 import { useState } from 'react';
+import {
+  getEvidenceVaultUrl,
+  getStixBundleUrl,
+  downloadInvestigationExport,
+} from '../../utils/cmiClient';
 
 export default function ResultSummaryCard({ result, isOrchestrating }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showRawError, setShowRawError] = useState(false);
   const [activeTab, setActiveTab] = useState('evidence');
+  const [isExporting, setIsExporting] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   if (isOrchestrating) {
     return (
@@ -102,11 +109,62 @@ export default function ResultSummaryCard({ result, isOrchestrating }) {
   }
 
   // ─── SUCCESS PATH (Mapped to Structured Telemetry) ───
-  const d = data || {};
+  const d = data || result || {};
   const t = d.telemetry || {};
   const ev = t.evidence || {};
   const stix = t.stix_bundle || {};
+  const currentInvestigationId =
+    d.investigation_id || investigationId || null;
 
+  const handleOpenEvidence = () => {
+    setActionError('');
+
+    if (!currentInvestigationId) {
+      setActionError('Investigation ID is unavailable.');
+      return;
+    }
+
+    const url = getEvidenceVaultUrl(currentInvestigationId);
+
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleViewStix = () => {
+    setActionError('');
+
+    if (!currentInvestigationId) {
+      setActionError('Investigation ID is unavailable.');
+      return;
+    }
+
+    const url = getStixBundleUrl(currentInvestigationId);
+
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleExport = async () => {
+    setActionError('');
+
+    if (!currentInvestigationId) {
+      setActionError('Investigation ID is unavailable.');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      await downloadInvestigationExport(currentInvestigationId);
+    } catch (err) {
+      setActionError(
+        err.message || 'Failed to export investigation.'
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
   const artifactCount = ev.artifacts_count || 0;
   const stixCount = stix.objects_count || 0;
   const findingsCount = stix.findings_count || 0;
@@ -131,7 +189,7 @@ export default function ResultSummaryCard({ result, isOrchestrating }) {
           </div>
         </div>
         <div className="result-header-right">
-          <span className="badge badge-emerald">{d.investigation_id}</span>
+          <span className="badge badge-emerald">{d.investigation_id || investigationId || 'INV-UNKNOWN'}</span>
           {showDetails ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </div>
       </div>
@@ -162,7 +220,7 @@ export default function ResultSummaryCard({ result, isOrchestrating }) {
               </div>
               <div className="integrity-row">
                 <span className="ig-key">Provider</span>
-                <span className="ig-val">{(d.target_platform || 'Linux')} x86_64</span>
+                <span className="ig-val">{(d.target_platform || 'Linux').toUpperCase()} x86_64</span>
               </div>
               <div className="integrity-row">
                 <span className="ig-key">STIX Objects</span>
@@ -268,19 +326,42 @@ export default function ResultSummaryCard({ result, isOrchestrating }) {
 
           {/* Action Buttons */}
           <div className="result-actions">
-            <button className="action-btn" title="View sealed evidence file">
+            <button
+              className="action-btn"
+              title="View sealed evidence file"
+              onClick={handleOpenEvidence}
+              disabled={!currentInvestigationId}
+            >
               <ShieldCheck size={12} />
               Open Evidence Vault
             </button>
-            <button className="action-btn" title="View STIX 2.1 bundle">
+
+            <button
+              className="action-btn"
+              title="View STIX 2.1 bundle"
+              onClick={handleViewStix}
+              disabled={!currentInvestigationId}
+            >
               <ExternalLink size={12} />
               View STIX
             </button>
-            <button className="action-btn" title="Export investigation artifacts">
+
+            <button
+              className="action-btn"
+              title="Export investigation artifacts"
+              onClick={handleExport}
+              disabled={!currentInvestigationId || isExporting}
+            >
               <Download size={12} />
-              Export
+              {isExporting ? 'Exporting...' : 'Export'}
             </button>
           </div>
+
+          {actionError && (
+            <div className="result-action-error">
+              {actionError}
+            </div>
+          )}
 
           {/* File Paths */}
           <div className="file-paths">

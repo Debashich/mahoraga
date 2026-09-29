@@ -1,0 +1,10 @@
+investigation "Process Network Correlation" {
+    collect process_list as processes
+    collect network_connections as connections
+    collect system_info as system
+
+    correlate processes with connections
+    correlate processes with system
+
+    emit evidence
+}

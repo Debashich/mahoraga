@@ -1,0 +1,11 @@
+investigation "Endpoint Triage" {
+    collect system_info as host
+    collect process_list as processes
+    collect network_connections as connections
+
+    correlate processes with host
+    correlate connections with host
+    correlate processes with connections
+
+    emit evidence
+}
