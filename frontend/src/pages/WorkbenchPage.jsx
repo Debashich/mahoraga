@@ -10,17 +10,13 @@ import {
 import JockyEditorPanel from '../components/workbench/JockyEditorPanel';
 import InvestigationConfigPanel from '../components/workbench/InvestigationConfigPanel';
 import PreflightDiagnosticsPanel from '../components/workbench/PreflightDiagnosticsPanel';
-import PipelineStatusPanel from '../components/workbench/PipelineStatusPanel';
+import CompilationPipelinePanel from '../components/workbench/CompilationPipelinePanel';
+import ForensicExecutionPanel from '../components/workbench/ForensicExecutionPanel';
 import ResultSummaryCard from '../components/workbench/ResultSummaryCard';
 
-import { orchestrateInvestigation } from '../utils/cmiClient';
-
 /*
- * Actual backend pipeline returned by the current
- * /api/v1/orchestrate endpoint.
- *
- * IMPORTANT:
- * These are backend stages, NOT user-facing layers.
+ * Backend stage IDs returned by POST /api/v1/orchestrate.
+ * Kept for result/audit data. Not the five user-facing layers.
  */
 const PIPELINE_STAGE_IDS = [
   'parse',
@@ -33,15 +29,6 @@ const PIPELINE_STAGE_IDS = [
   'stix',
 ];
 
-/*
- * Five user-facing investigation layers.
- *
- * 1. Investigation
- * 2. Configuration + Preflight
- * 3. Compilation / preparation
- * 4. Forensic execution
- * 5. Evidence + detection
- */
 const LAYERS = [
   {
     id: 1,
@@ -90,6 +77,9 @@ const PHASE_STATUS_LABEL = {
   pending: 'LOCKED',
 };
 
+const INVESTIGATION_REGEX =
+  /(?:investigate|investigation)\s+(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\{/i;
+
 export default function WorkbenchPage({
   targetPlatform,
   onPlatformChange,
@@ -99,14 +89,11 @@ export default function WorkbenchPage({
   onOrchestrationComplete,
   lastResult,
 }) {
-  /* ============================================================
-   * CORE INVESTIGATION STATE
-   * ========================================================== */
+  /* ---------------- CORE INVESTIGATION STATE ---------------- */
 
   const [jockySource, setJockySource] = useState('');
   const [investigationName, setInvestigationName] = useState('');
   const [operatorId, setOperatorId] = useState('');
-
   const [evidenceFormat, setEvidenceFormat] = useState('');
   const [sealIntegrity, setSealIntegrity] = useState(true);
 
@@ -117,137 +104,129 @@ export default function WorkbenchPage({
     'auth_logs',
   ]);
 
-  /* ============================================================
-   * PRE-FLIGHT
-   * ========================================================== */
+  /* ---------------- PRE-FLIGHT ---------------- */
 
   const [preflightResults, setPreflightResults] = useState(null);
 
-  /* ============================================================
-   * BACKEND EXECUTION
-   * ========================================================== */
+  /* ---------------- BACKEND EXECUTION ---------------- */
 
-  const [isOrchestrating, setIsOrchestrating] = useState(false);
-  const [orchestrationResult, setOrchestrationResult] =
-    useState(lastResult || null);
+  const [isOrchestrating] = useState(false);
 
-  /* ============================================================
-   * COMPILATION STATE
-   *
-   * This is intentionally frontend workflow state for now.
-   *
-   * The current backend exposes /orchestrate, not /compile.
-   * Therefore we MUST NOT pretend that a compile API exists.
-   * ========================================================== */
+  const [orchestrationResult, setOrchestrationResult] = useState(
+    lastResult || null
+  );
+
+  /* ---------------- COMPILATION / EXECUTION STATE ---------------- */
 
   const [compilationReady, setCompilationReady] = useState(false);
+  const [compiledArtifact, setCompiledArtifact] = useState(null);
+  const [executionResult, setExecutionResult] = useState(
+    orchestrationResult || null
+  );
 
-  const [isCompiling, setIsCompiling] = useState(false);
-
-  /* ============================================================
-   * PIPELINE VISUALIZATION
-   * ========================================================== */
+  /* ---------------- BACKEND PIPELINE VISUALIZATION ---------------- */
 
   const [pipelineStages, setPipelineStages] = useState(
-    PIPELINE_STAGE_IDS.map((id) => ({
-      id,
-      status: 'idle',
-    }))
+    PIPELINE_STAGE_IDS.map((id) => ({ id, status: 'idle' }))
   );
 
   const [pipelineProgress, setPipelineProgress] = useState(0);
   const [currentActivity, setCurrentActivity] = useState('');
 
-  /* ============================================================
-   * ACTIVE USER-FACING LAYER
-   * ========================================================== */
+  /* ---------------- ACTIVE USER-FACING LAYER ---------------- */
 
   const [activeLayer, setActiveLayer] = useState(1);
 
-  /* ============================================================
-   * INVALIDATION HELPERS
-   * ========================================================== */
+  /* ---------------- INVALIDATION ---------------- */
 
   const invalidateWorkflow = useCallback(() => {
     setPreflightResults(null);
     setCompilationReady(false);
-
     setOrchestrationResult(null);
+    setCompiledArtifact(null);
+    setExecutionResult(null);
 
     setPipelineStages(
-      PIPELINE_STAGE_IDS.map((id) => ({
-        id,
-        status: 'idle',
-      }))
+      PIPELINE_STAGE_IDS.map((id) => ({ id, status: 'idle' }))
     );
 
     setPipelineProgress(0);
     setCurrentActivity('');
   }, []);
 
-  /* ============================================================
-   * CAPABILITY TOGGLE
-   * ========================================================== */
+  /* ---------------- CAPABILITY TOGGLE ---------------- */
 
   const handleToggleCapability = useCallback((capId) => {
     setActiveCapabilities((prev) =>
       prev.includes(capId)
-        ? prev.filter((c) => c !== capId)
+        ? prev.filter((capability) => capability !== capId)
         : [...prev, capId]
     );
 
     setPreflightResults(null);
     setCompilationReady(false);
+    setOrchestrationResult(null);
   }, []);
 
-  /* ============================================================
-   * PRE-FLIGHT
-   * ========================================================== */
+  /* ---------------- COMPILATION / EXECUTION CALLBACKS ---------------- */
+
+  const handleCompilationReady = useCallback((artifact) => {
+    setCompiledArtifact(artifact);
+    setCompilationReady(Boolean(artifact));
+    setPipelineProgress(artifact ? 100 : 0);
+    setCurrentActivity(
+      artifact
+        ? 'Runtime artifact prepared. Continue to forensic execution.'
+        : ''
+    );
+  }, []);
+
+  const handleExecutionComplete = useCallback(
+    (result) => {
+      setExecutionResult(result);
+      setOrchestrationResult(result);
+      setPipelineProgress(result?.success ? 100 : 0);
+      setCurrentActivity(
+        result?.success
+          ? 'Forensic execution complete. Evidence and detection outputs are ready.'
+          : `Execution failed at ${result?.stage || 'unknown stage'}.`
+      );
+      if (onOrchestrationComplete) {
+        onOrchestrationComplete(result);
+      }
+    },
+    [onOrchestrationComplete]
+  );
+
+  /* ---------------- PRE-FLIGHT ---------------- */
 
   const handleRunPreflight = useCallback(() => {
     const source = jockySource.trim();
 
-    const hasInvestigation =
-      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(source);
+    const hasInvestigation = INVESTIGATION_REGEX.test(source);
 
-    /*
-     * Correct correlate check.
-     *
-     * Old logic:
-     *
-     * !source.match(...) || source.includes('with')
-     *
-     * was effectively allowing almost everything.
-     */
-    const correlateStatements = source.match(
-      /correlate\s+[^\n;]+/gi
-    ) || [];
+    const correlateStatements = source.match(/correlate\s+[^\n;]+/gi) || [];
 
     const hasInvalidCorrelate = correlateStatements.some(
       (statement) => !/\bwith\b/i.test(statement)
     );
 
     const hasCorrelateWith = !hasInvalidCorrelate;
-
     const hasTarget = Boolean(targetPlatform);
     const hasCapabilities = activeCapabilities.length > 0;
     const hasOperator = operatorId.trim().length > 0;
 
     const hasInvestigationName =
-      investigationName.trim().length > 0 ||
-      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(source);
+      investigationName.trim().length > 0 || INVESTIGATION_REGEX.test(source);
 
     const checks = [
       {
         name: 'Investigation Block',
-        status: hasInvestigation
-          ? 'PASS'
-          : 'BLOCK',
+        status: hasInvestigation ? 'PASS' : 'BLOCK',
         detail: hasInvestigation
           ? 'Investigation block detected.'
           : 'Missing investigate block.',
       },
-
       {
         name: 'Correlate Syntax',
         status: hasCorrelateWith ? 'PASS' : 'WARN',
@@ -255,7 +234,6 @@ export default function WorkbenchPage({
           ? 'Correlate statements use the expected "with" form.'
           : 'Warning: correlate requires "correlate X with Y" syntax.',
       },
-
       {
         name: 'Target Platform',
         status: hasTarget ? 'PASS' : 'BLOCK',
@@ -263,7 +241,6 @@ export default function WorkbenchPage({
           ? `Target platform resolved as ${targetPlatform}.`
           : 'No target platform has been selected.',
       },
-
       {
         name: 'Capability Configuration',
         status: hasCapabilities ? 'PASS' : 'BLOCK',
@@ -271,7 +248,6 @@ export default function WorkbenchPage({
           ? `${activeCapabilities.length} forensic capabilities requested.`
           : 'At least one forensic capability must be selected.',
       },
-
       {
         name: 'Investigation Identity',
         status: hasInvestigationName ? 'PASS' : 'BLOCK',
@@ -281,50 +257,47 @@ export default function WorkbenchPage({
             : 'Investigation identity detected from Jocky source.'
           : 'Investigation name is required in the Jocky source.',
       },
-
       {
         name: 'Evidence Configuration',
         status: sealIntegrity ? 'PASS' : 'WARN',
         detail: sealIntegrity
-          ? `Integrity sealing enabled${evidenceFormat
-            ? ` with ${evidenceFormat} output`
-            : ''
-          }.`
+          ? `Integrity sealing enabled${
+              evidenceFormat ? ` with ${evidenceFormat} output` : ''
+            }.`
           : 'Integrity sealing is disabled. Evidence can still be collected, but sealing is not enabled.',
       },
-
       {
         name: 'Backend Endpoint Contract',
         status: 'PASS',
         detail:
           'Current execution uses POST /api/v1/orchestrate with { jocky_source, target_platform }.',
       },
-
       {
         name: 'Provider Capability Contract',
-        status:
-          hasCapabilities && hasTarget
-            ? 'PASS'
-            : 'BLOCK',
+        status: hasCapabilities && hasTarget ? 'PASS' : 'BLOCK',
         detail:
           hasCapabilities && hasTarget
             ? `Selected capabilities are configured for the ${targetPlatform} provider.`
             : 'Provider capability resolution cannot proceed without a target and capabilities.',
       },
-
+      {
+        name: 'Memory Runtime Boundary',
+        status: hasInvestigation && hasCapabilities ? 'PASS' : 'BLOCK',
+        detail:
+          hasInvestigation && hasCapabilities
+            ? 'Runtime pipeline is prepared for the memory-backed execution path.'
+            : 'A valid investigation and capability set are required before runtime preparation.',
+      },
       {
         name: 'CMI Backend Connection',
         status: cmiConnected ? 'PASS' : 'WARN',
         detail: cmiConnected
           ? 'CMI Backend is LIVE at http://localhost:8000.'
-          : 'CMI Backend is OFFLINE. Start the CMI backend on port 8000.',
+          : 'CMI Backend is OFFLINE. Start the CMI backend on port 8000: uvicorn cmi.server:app --host 0.0.0.0 --port 8000',
       },
     ];
 
-    const blocked = checks.some(
-      (check) => check.status === 'BLOCK'
-    );
-
+    const blocked = checks.some((check) => check.status === 'BLOCK');
     const passed = !blocked && cmiConnected;
 
     setPreflightResults({
@@ -335,20 +308,12 @@ export default function WorkbenchPage({
       capabilities: [...activeCapabilities],
     });
 
-    /*
-     * Stay on Step 2.
-     *
-     * The user explicitly decides when to proceed.
-     */
     setActiveLayer(2);
 
     requestAnimationFrame(() => {
       document
         .getElementById('preflight-results')
-        ?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        });
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }, [
     jockySource,
@@ -360,370 +325,58 @@ export default function WorkbenchPage({
     evidenceFormat,
     cmiConnected,
   ]);
-  /* ============================================================
-   * COMPILE / PREPARE
-   *
-   * IMPORTANT:
-   *
-   * There is currently NO /compile endpoint.
-   *
-   * Therefore this function does NOT call the backend.
-   *
-   * It represents the UI transition:
-   *
-   * Preflight → compilation ready → explicit execution.
-   *
-   * The actual compiler runs inside /orchestrate when execution
-   * begins.
-   * ========================================================== */
 
-  const handleCompile = useCallback(() => {
-    if (isCompiling || isOrchestrating) return;
-
-    const preflightPassed =
-      preflightResults?.passed === true &&
-      preflightResults?.targetPlatform === targetPlatform;
-
-    if (!preflightPassed) {
-      setActiveLayer(2);
-      return;
-    }
-
-    setIsCompiling(true);
-    setActiveLayer(3);
-
-    setCurrentActivity(
-      'Compilation inputs validated. Forensic execution plan is ready.'
-    );
-
-    setPipelineStages(
-      PIPELINE_STAGE_IDS.map((stage, index) => ({
-        id: stage,
-        status: index <= 3 ? 'completed' : 'idle',
-      }))
-    );
-
-    setPipelineProgress(50);
-
-    /*
-     * The frontend cannot claim that the backend has actually
-     * lowered/executed anything until /orchestrate runs.
-     */
-    setTimeout(() => {
-      setCompilationReady(true);
-      setIsCompiling(false);
-
-      setCurrentActivity(
-        'Compilation boundary ready. Review the plan, then execute.'
-      );
-    }, 250);
-  }, [
-    isCompiling,
-    isOrchestrating,
-    preflightResults,
-    targetPlatform,
-  ]);
-
-  /* ============================================================
-   * EXECUTION
-   * ========================================================== */
-
-  const handleExecute = useCallback(async () => {
-    if (isOrchestrating || !compilationReady) return;
-
-    const preflightPassed =
-      preflightResults?.passed === true &&
-      preflightResults?.targetPlatform === targetPlatform;
-
-    if (!preflightPassed) {
-      setActiveLayer(2);
-      return;
-    }
-
-    setIsOrchestrating(true);
-    setActiveLayer(4);
-
-    setOrchestrationResult(null);
-
-    setPipelineStages(
-      PIPELINE_STAGE_IDS.map((id) => ({
-        id,
-        status: 'idle',
-      }))
-    );
-
-    setPipelineProgress(0);
-
-    setCurrentActivity(
-      'Executing forensic compilation and native provider pipeline...'
-    );
-
-    try {
-      const result = await orchestrateInvestigation(
-        jockySource,
-        targetPlatform
-      );
-
-      setOrchestrationResult(result);
-
-      if (result?.success) {
-        setPipelineStages(
-          PIPELINE_STAGE_IDS.map((id) => ({
-            id,
-            status: 'completed',
-          }))
-        );
-
-        setPipelineProgress(100);
-
-        setCurrentActivity(
-          'Forensic execution complete. Evidence and intelligence are ready. Review the execution result before opening evidence.'
-        );
-
-        /*
-         * IMPORTANT:
-         *
-         * Do NOT change activeLayer here.
-         *
-         * The user remains on Step 4 until they explicitly
-         * choose "View Evidence & Detection".
-         */
-
-
-      } else {
-        const failStage = String(
-          result?.stage || ''
-        ).toLowerCase();
-
-        let failIdx =
-          PIPELINE_STAGE_IDS.length - 1;
-
-        if (
-          failStage.includes('compiler') ||
-          failStage.includes('parse')
-        ) {
-          failIdx = 0;
-        } else if (
-          failStage.includes('semantic')
-        ) {
-          failIdx = 1;
-        } else if (
-          failStage.includes('capability')
-        ) {
-          failIdx = 2;
-        } else if (
-          failStage.includes('ir')
-        ) {
-          failIdx = 3;
-        } else if (
-          failStage.includes('obfuscator')
-        ) {
-          failIdx = 4;
-        } else if (
-          failStage.includes('runtime') ||
-          failStage.includes('odin') ||
-          failStage.includes('mahoraga-run')
-        ) {
-          failIdx = 5;
-        } else if (
-          failStage.includes('sealing')
-        ) {
-          failIdx = 6;
-        } else if (
-          failStage.includes('stix') ||
-          failStage.includes('detection')
-        ) {
-          failIdx = 7;
-        }
-
-        setPipelineStages((prev) =>
-          prev.map((stage, index) => {
-            if (index < failIdx) {
-              return {
-                ...stage,
-                status: 'completed',
-              };
-            }
-
-            if (index === failIdx) {
-              return {
-                ...stage,
-                status: 'failed',
-              };
-            }
-
-            return {
-              ...stage,
-              status: 'idle',
-            };
-          })
-        );
-
-        setPipelineProgress(
-          Math.round(
-            (failIdx / PIPELINE_STAGE_IDS.length) * 100
-          )
-        );
-
-        setCurrentActivity(
-          `Pipeline failed at: ${result?.stage || 'unknown stage'
-          }`
-        );
-
-        /*
-         * Compilation-side failure.
-         */
-        if (failIdx <= 4) {
-          setActiveLayer(3);
-        } else {
-          setActiveLayer(4);
-        }
-      }
-
-      if (onOrchestrationComplete) {
-        onOrchestrationComplete(result);
-      }
-    } catch (error) {
-      console.error(
-        'Mahoraga orchestration failed:',
-        error
-      );
-
-      const result = {
-        success: false,
-        stage: 'runtime',
-        error:
-          error?.message ||
-          'Unknown orchestration error.',
-      };
-
-      setOrchestrationResult(result);
-
-      setPipelineStages((prev) =>
-        prev.map((stage, index) =>
-          index === 5
-            ? {
-              ...stage,
-              status: 'failed',
-            }
-            : index < 5
-              ? {
-                ...stage,
-                status: 'completed',
-              }
-              : stage
-        )
-      );
-
-      setPipelineProgress(
-        Math.round(
-          (5 / PIPELINE_STAGE_IDS.length) * 100
-        )
-      );
-
-      setCurrentActivity(
-        `Pipeline failed: ${result.error}`
-      );
-
-      setActiveLayer(4);
-
-      if (onOrchestrationComplete) {
-        onOrchestrationComplete(result);
-      }
-    } finally {
-      setIsOrchestrating(false);
-    }
-  }, [
-    isOrchestrating,
-    compilationReady,
-    preflightResults,
-    targetPlatform,
-    jockySource,
-    onOrchestrationComplete,
-  ]);
-
-  /* ============================================================
-   * LAYER STATUS
-   * ========================================================== */
+  /* ---------------- LAYER STATUS ---------------- */
 
   const layerStatuses = useMemo(() => {
     const result = orchestrationResult;
 
     const sourceReady =
-      jockySource.trim().length > 0 &&
-      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(
-        jockySource
-      );
+      jockySource.trim().length > 0 && INVESTIGATION_REGEX.test(jockySource);
 
     const configReady =
-    (
-      investigationName.trim().length > 0 ||
-      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(
-        jockySource
-      )
-    ) &&
-    activeCapabilities.length > 0 &&
-    Boolean(targetPlatform);
+      (investigationName.trim().length > 0 ||
+        INVESTIGATION_REGEX.test(jockySource)) &&
+      activeCapabilities.length > 0 &&
+      Boolean(targetPlatform);
 
     const preflightPassed =
       preflightResults?.passed === true &&
       preflightResults?.targetPlatform === targetPlatform;
 
-    const layer2Ready =
-      configReady && preflightPassed;
+    const layer2Ready = configReady && preflightPassed;
 
-    const compilationComplete =
-      compilationReady === true;
+    const compilationComplete = compilationReady === true;
 
-    const executionComplete =
-      Boolean(result) &&
-      result.success === true;
-
-    const executionFailed =
-      Boolean(result) &&
-      result.success === false;
+    const executionComplete = Boolean(result) && result.success === true;
+    const executionFailed = Boolean(result) && result.success === false;
 
     const evidenceComplete =
       executionComplete &&
-      Number(
-        result?.data?.sealed_artifacts_count || 0
-      ) > 0;
+      Number(result?.data?.sealed_artifacts_count || 0) > 0;
 
     const intelligenceComplete =
       executionComplete &&
-      (
-        Number(
-          result?.data?.stix_objects_count || 0
-        ) > 0 ||
-        Number(
-          result?.data?.stix_findings_count || 0
-        ) > 0
-      );
+      (Number(result?.data?.stix_objects_count || 0) > 0 ||
+        Number(result?.data?.stix_findings_count || 0) > 0);
 
-    /*
-     * Layer 5 is accessible after execution.
-     */
     const layer5Ready =
-      executionComplete ||
-      evidenceComplete ||
-      intelligenceComplete;
+      executionComplete || evidenceComplete || intelligenceComplete;
 
     return {
-      1:
-        sourceReady
-          ? activeLayer === 1
-            ? 'current'
-            : 'completed'
-          : 'current',
+      1: sourceReady
+        ? activeLayer === 1
+          ? 'current'
+          : 'completed'
+        : 'current',
 
-      2:
-        layer2Ready
-          ? activeLayer === 2
-            ? 'current'
-            : 'completed'
-          : activeLayer === 2
-            ? 'current'
-            : 'pending',
+      2: layer2Ready
+        ? activeLayer === 2
+          ? 'current'
+          : 'completed'
+        : activeLayer === 2
+          ? 'current'
+          : 'pending',
 
       3:
         executionFailed && !compilationComplete
@@ -736,23 +389,21 @@ export default function WorkbenchPage({
                 ? 'current'
                 : 'pending',
 
-      4:
-        executionFailed
-          ? 'failed'
-          : executionComplete
-            ? 'completed'
-            : activeLayer === 4
-              ? 'current'
-              : compilationComplete
-                ? 'current'
-                : 'pending',
-
-      5:
-        layer5Ready
+      4: executionFailed
+        ? 'failed'
+        : executionComplete
           ? 'completed'
-          : activeLayer === 5
+          : activeLayer === 4
             ? 'current'
-            : 'pending',
+            : compilationComplete
+              ? 'current'
+              : 'pending',
+
+      5: layer5Ready
+        ? 'completed'
+        : activeLayer === 5
+          ? 'current'
+          : 'pending',
     };
   }, [
     jockySource,
@@ -765,18 +416,13 @@ export default function WorkbenchPage({
     activeLayer,
   ]);
 
-  /* ============================================================
-   * RAIL PROGRESS
-   * ========================================================== */
+  /* ---------------- RAIL PROGRESS ---------------- */
 
   const railProgress = useMemo(() => {
     let lastDone = -1;
 
-    for (let i = 0; i < LAYERS.length; i++) {
-      if (
-        layerStatuses[LAYERS[i].id] ===
-        'completed'
-      ) {
+    for (let i = 0; i < LAYERS.length; i += 1) {
+      if (layerStatuses[LAYERS[i].id] === 'completed') {
         lastDone = i;
       } else {
         break;
@@ -787,15 +433,10 @@ export default function WorkbenchPage({
       return 0;
     }
 
-    return (
-      (lastDone / (LAYERS.length - 1)) *
-      100
-    );
+    return (lastDone / (LAYERS.length - 1)) * 100;
   }, [layerStatuses]);
 
-  /* ============================================================
-   * BADGE
-   * ========================================================== */
+  /* ---------------- LAYER BADGE ---------------- */
 
   const getLayerBadge = (id, status) => {
     if (status === 'completed') {
@@ -836,12 +477,11 @@ export default function WorkbenchPage({
     return null;
   };
 
-  /* ============================================================
-   * LAYER CONTENT
-   * ========================================================== */
+  /* ---------------- LAYER CONTENT ---------------- */
 
   const renderLayerContent = (id) => {
     switch (id) {
+      /* STEP 01 — INVESTIGATION */
       case 1:
         return (
           <JockyEditorPanel
@@ -852,14 +492,27 @@ export default function WorkbenchPage({
             }}
             onRunPreflight={() => {
               setActiveLayer(2);
+
+              requestAnimationFrame(() => {
+                document
+                  .getElementById('investigation-layer-2')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              });
             }}
             onRunInvestigation={() => {
               setActiveLayer(2);
+
+              requestAnimationFrame(() => {
+                document
+                  .getElementById('investigation-layer-2')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              });
             }}
             isOrchestrating={isOrchestrating}
           />
         );
 
+      /* STEP 02 — CONFIGURATION */
       case 2:
         return (
           <>
@@ -901,9 +554,7 @@ export default function WorkbenchPage({
                 setCompilationReady(false);
               }}
               activeCapabilities={activeCapabilities}
-              onToggleCapability={
-                handleToggleCapability
-              }
+              onToggleCapability={handleToggleCapability}
             />
 
             <div id="preflight-results">
@@ -939,90 +590,57 @@ export default function WorkbenchPage({
           </>
         );
 
+      /* STEP 03 — COMPILATION */
       case 3:
         return (
           <div className="workflow-action-panel">
-            <PipelineStatusPanel
-              cmiConnected={cmiConnected}
-              isOrchestrating={isCompiling}
-              orchestrationResult={null}
-              pipelineStages={pipelineStages}
-              pipelineProgress={pipelineProgress}
-              currentActivity={currentActivity}
+            <CompilationPipelinePanel
+              source={jockySource}
+              targetPlatform={targetPlatform}
+              activeCapabilities={activeCapabilities}
+              preflightPassed={Boolean(
+                preflightResults?.passed &&
+                  preflightResults?.targetPlatform === targetPlatform
+              )}
+              onReady={handleCompilationReady}
+              onStateChange={setPipelineStages}
             />
 
             <div className="workflow-actions">
-              {!compilationReady ? (
-                <button
-                  type="button"
-                  className="workflow-primary-btn"
-                  onClick={handleCompile}
-                  disabled={
-                    isCompiling ||
-                    isOrchestrating ||
-                    !preflightResults?.passed
-                  }
-                >
-                  {isCompiling
-                    ? 'COMPILING...'
-                    : 'COMPILE INVESTIGATION'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="workflow-primary-btn"
-                  onClick={() => {
-                    setActiveLayer(4);
+              <button
+                type="button"
+                className="workflow-primary-btn"
+                disabled={!compilationReady}
+                onClick={() => {
+                  setActiveLayer(4);
 
-                    requestAnimationFrame(() => {
-                      document
-                        .getElementById(
-                          'investigation-layer-4'
-                        )
-                        ?.scrollIntoView({
-                          behavior: 'smooth',
-                          block: 'start',
-                        });
-                    });
-                  }}
-                >
-                  CONTINUE TO EXECUTION
-                  <ChevronRight size={15} />
-                </button>
-              )}
+                  requestAnimationFrame(() => {
+                    document
+                      .getElementById('investigation-layer-4')
+                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  });
+                }}
+              >
+                CONTINUE TO EXECUTION
+                <ChevronRight size={15} />
+              </button>
             </div>
           </div>
         );
 
+      /* STEP 04 — FORENSIC EXECUTION */
       case 4:
         return (
           <div className="workflow-action-panel">
-            <PipelineStatusPanel
+            <ForensicExecutionPanel
+              compiledArtifact={compiledArtifact}
               cmiConnected={cmiConnected}
-              isOrchestrating={isOrchestrating}
-              orchestrationResult={orchestrationResult}
-              pipelineStages={pipelineStages}
-              pipelineProgress={pipelineProgress}
-              currentActivity={currentActivity}
+              targetPlatform={targetPlatform}
+              onExecutionComplete={handleExecutionComplete}
             />
 
-            <div className="workflow-actions">
-              {!orchestrationResult?.success ? (
-                <button
-                  type="button"
-                  className="workflow-primary-btn"
-                  onClick={handleExecute}
-                  disabled={
-                    isOrchestrating ||
-                    !compilationReady ||
-                    !preflightResults?.passed
-                  }
-                >
-                  {isOrchestrating
-                    ? 'EXECUTING FORENSIC PIPELINE...'
-                    : 'EXECUTE INVESTIGATION'}
-                </button>
-              ) : (
+            {orchestrationResult?.success && (
+              <div className="workflow-actions">
                 <button
                   type="button"
                   className="workflow-primary-btn"
@@ -1031,9 +649,7 @@ export default function WorkbenchPage({
 
                     requestAnimationFrame(() => {
                       document
-                        .getElementById(
-                          'investigation-layer-5'
-                        )
+                        .getElementById('investigation-layer-5')
                         ?.scrollIntoView({
                           behavior: 'smooth',
                           block: 'start',
@@ -1044,10 +660,12 @@ export default function WorkbenchPage({
                   VIEW EVIDENCE & DETECTION
                   <ChevronRight size={15} />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         );
+
+      /* STEP 05 — EVIDENCE & DETECTION */
       case 5:
         return (
           <ResultSummaryCard
@@ -1061,60 +679,46 @@ export default function WorkbenchPage({
     }
   };
 
-  /* ============================================================
-   * LAYER NAVIGATION
-   * ========================================================== */
+  /* ---------------- LAYER NAVIGATION ---------------- */
 
-  const handleLayerClick = (id) => {
-    const status = layerStatuses[id];
+  const handleLayerClick = useCallback(
+    (id) => {
+      const status = layerStatuses[id];
 
-    if (status === 'pending') {
-      return;
-    }
+      if (status === 'pending') {
+        return;
+      }
 
-    setActiveLayer(id);
+      setActiveLayer(id);
 
-    requestAnimationFrame(() => {
-      document
-        .getElementById(
-          `investigation-layer-${id}`
-        )
-        ?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        });
-    });
-  };
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`investigation-layer-${id}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    },
+    [layerStatuses]
+  );
 
-  /* ============================================================
-   * RENDER
-   * ========================================================== */
+  /* ---------------- RENDER ---------------- */
 
   return (
     <div className="workbench-page">
       <div className="investigation-heading">
         <div>
-          <div className="eyebrow">
-            FORENSIC WORKFLOW
-          </div>
+          <div className="eyebrow">FORENSIC WORKFLOW</div>
 
           <h1>JOCKY INVESTIGATION</h1>
 
-          <p>
-            Investigate → configure → compile →
-            execute → preserve
-          </p>
+          <p>Investigate → configure → compile → execute → preserve</p>
         </div>
       </div>
 
       <div className="workbench-with-phase-rail">
         <div className="investigation-layers">
           {LAYERS.map((layer) => {
-            const status =
-              layerStatuses[layer.id];
-
-            const isActive =
-              activeLayer === layer.id;
+            const status = layerStatuses[layer.id];
+            const isActive = activeLayer === layer.id;
 
             return (
               <section
@@ -1123,9 +727,7 @@ export default function WorkbenchPage({
                 className={[
                   'investigation-layer',
                   `layer-${status}`,
-                  isActive
-                    ? 'layer-active'
-                    : '',
+                  isActive ? 'layer-active' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
@@ -1133,37 +735,20 @@ export default function WorkbenchPage({
                 <button
                   type="button"
                   className="layer-header"
-                  onClick={() =>
-                    handleLayerClick(
-                      layer.id
-                    )
-                  }
-                  disabled={
-                    status === 'pending'
-                  }
+                  onClick={() => handleLayerClick(layer.id)}
+                  disabled={status === 'pending'}
                 >
                   <span className="layer-number">
-                    {String(layer.id).padStart(
-                      2,
-                      '0'
-                    )}
+                    {String(layer.id).padStart(2, '0')}
                   </span>
 
                   <span className="layer-heading">
-                    <span className="layer-title">
-                      {layer.title}
-                    </span>
-
-                    <span className="layer-subtitle">
-                      {layer.subtitle}
-                    </span>
+                    <span className="layer-title">{layer.title}</span>
+                    <span className="layer-subtitle">{layer.subtitle}</span>
                   </span>
 
                   <span className="layer-status">
-                    {getLayerBadge(
-                      layer.id,
-                      status
-                    )}
+                    {getLayerBadge(layer.id, status)}
 
                     {isActive ? (
                       <ChevronDown size={15} />
@@ -1175,9 +760,7 @@ export default function WorkbenchPage({
 
                 {isActive && (
                   <div className="layer-content">
-                    {renderLayerContent(
-                      layer.id
-                    )}
+                    {renderLayerContent(layer.id)}
                   </div>
                 )}
               </section>
@@ -1185,41 +768,22 @@ export default function WorkbenchPage({
           })}
         </div>
 
-        <nav
-          className="phase-rail"
-          aria-label="Investigation phases"
-        >
+        {/* PHASE RAIL */}
+        <nav className="phase-rail" aria-label="Investigation phases">
           <div className="phase-rail-track">
-            <div
-              className="phase-rail-line"
-              aria-hidden="true"
-            >
+            <div className="phase-rail-line" aria-hidden="true">
               <span
                 className="phase-rail-line-fill"
-                style={{
-                  height: `${railProgress}%`,
-                }}
+                style={{ height: `${railProgress}%` }}
               />
             </div>
 
             <ol className="phase-rail-list">
               {LAYERS.map((layer) => {
-                const status =
-                  layerStatuses[layer.id];
-
-                const isActive =
-                  activeLayer === layer.id;
-
-                const statusLabel =
-                  PHASE_STATUS_LABEL[
-                  status
-                  ];
-
-                const num =
-                  String(layer.id).padStart(
-                    2,
-                    '0'
-                  );
+                const status = layerStatuses[layer.id];
+                const isActive = activeLayer === layer.id;
+                const statusLabel = PHASE_STATUS_LABEL[status];
+                const num = String(layer.id).padStart(2, '0');
 
                 return (
                   <li key={layer.id}>
@@ -1228,54 +792,35 @@ export default function WorkbenchPage({
                       className={[
                         'phase-rail-node',
                         `phase-rail-node-${status}`,
-                        isActive
-                          ? 'phase-rail-node-active'
-                          : '',
+                        isActive ? 'phase-rail-node-active' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
-                      onClick={() =>
-                        handleLayerClick(
-                          layer.id
-                        )
-                      }
-                      aria-disabled={
-                        status === 'pending'
-                      }
-                      aria-current={
-                        isActive
-                          ? 'step'
-                          : undefined
-                      }
+                      onClick={() => handleLayerClick(layer.id)}
+                      aria-disabled={status === 'pending'}
+                      aria-current={isActive ? 'step' : undefined}
                       aria-label={`${layer.id}. ${layer.title} — ${statusLabel?.toLowerCase()}`}
                     >
                       <span className="phase-rail-number">
                         {num}
 
-                        {status ===
-                          'completed' && (
-                            <CheckCircle2
-                              size={10}
-                              className="phase-rail-mark"
-                            />
-                          )}
+                        {status === 'completed' && (
+                          <CheckCircle2
+                            size={10}
+                            className="phase-rail-mark"
+                          />
+                        )}
 
-                        {status ===
-                          'failed' && (
-                            <AlertTriangle
-                              size={10}
-                              className="phase-rail-mark"
-                            />
-                          )}
+                        {status === 'failed' && (
+                          <AlertTriangle
+                            size={10}
+                            className="phase-rail-mark"
+                          />
+                        )}
                       </span>
 
-                      <span
-                        className="phase-rail-tooltip"
-                        role="tooltip"
-                      >
-                        <span className="phase-tooltip-number">
-                          {num}
-                        </span>
+                      <span className="phase-rail-tooltip" role="tooltip">
+                        <span className="phase-tooltip-number">{num}</span>
 
                         <span className="phase-tooltip-content">
                           <span className="phase-tooltip-title">
@@ -1283,11 +828,7 @@ export default function WorkbenchPage({
                           </span>
 
                           <span className="phase-tooltip-description">
-                            {
-                              PHASE_META[
-                              layer.id
-                              ]
-                            }
+                            {PHASE_META[layer.id]}
                           </span>
 
                           <span className="phase-tooltip-status">
@@ -1305,74 +846,56 @@ export default function WorkbenchPage({
       </div>
 
       <style>{`
+        /* WORKFLOW ACTIONS */
+
         .workflow-action-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
 
-.workflow-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+        .workflow-actions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          padding: 12px;
+          border-top: 1px solid var(--border-color);
+        }
 
-  padding: 12px;
+        .workflow-primary-btn {
+          min-height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          padding: 0 15px;
+          border: 1px solid var(--text-primary);
+          background: var(--text-primary);
+          color: var(--bg-primary);
+          font-family: monospace;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.6px;
+          cursor: pointer;
+          transition: opacity 120ms ease, transform 120ms ease;
+        }
 
-  border-top: 1px solid var(--border-color);
-}
+        .workflow-primary-btn:hover:not(:disabled) {
+          opacity: 0.85;
+        }
 
-.workflow-primary-btn {
-  min-height: 38px;
+        .workflow-primary-btn:active:not(:disabled) {
+          transform: translateY(1px);
+        }
 
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
+        .workflow-primary-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
 
-  padding: 0 15px;
+        /* WORKBENCH */
 
-  border: 1px solid var(--text-primary);
-  background: var(--text-primary);
-  color: var(--bg-primary);
-
-  font-family: monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-
-  cursor: pointer;
-
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
-}
-
-.workflow-primary-btn:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.workflow-primary-btn:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.workflow-primary-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.compile-ready-message {
-  flex: 1;
-
-  display: flex;
-  align-items: center;
-  gap: 7px;
-
-  color: var(--status-success);
-
-  font-family: monospace;
-  font-size: 9px;
-}
         .workbench-page {
           display: flex;
           flex-direction: column;
@@ -1407,6 +930,8 @@ export default function WorkbenchPage({
           font-family: monospace;
         }
 
+        /* MAIN LAYOUT + PHASE RAIL */
+
         .workbench-with-phase-rail {
           --phase-rail-width: 46px;
           --phase-rail-right: 20px;
@@ -1414,11 +939,15 @@ export default function WorkbenchPage({
           --phase-node: 34px;
 
           display: grid;
-          grid-template-columns:
-            minmax(0, 1fr)
-            var(--phase-rail-width);
+          grid-template-columns: minmax(0, 1fr) var(--phase-rail-width);
           column-gap: 18px;
           align-items: start;
+          min-width: 0;
+        }
+
+        .investigation-layers {
+          display: flex;
+          flex-direction: column;
           min-width: 0;
         }
 
@@ -1429,11 +958,9 @@ export default function WorkbenchPage({
           bottom: 24px;
           width: var(--phase-rail-width);
           z-index: 30;
-
           display: flex;
           align-items: center;
           justify-content: center;
-
           pointer-events: none;
         }
 
@@ -1466,29 +993,22 @@ export default function WorkbenchPage({
           list-style: none;
           margin: 0;
           padding: 0;
-
           display: flex;
           flex-direction: column;
           align-items: center;
-
           gap: clamp(4px, 1.5vh, 10px);
         }
 
         .phase-rail-node {
           position: relative;
-
           width: var(--phase-node);
           height: var(--phase-node);
-
           padding: 0;
-
           display: flex;
           align-items: center;
           justify-content: center;
-
           border: 0;
           background: transparent;
-
           cursor: pointer;
         }
 
@@ -1498,24 +1018,18 @@ export default function WorkbenchPage({
 
         .phase-rail-number {
           position: relative;
-
           width: 30px;
           height: 30px;
-
           display: flex;
           align-items: center;
           justify-content: center;
-
           border: 1px solid var(--border-color);
           background: var(--bg-primary);
-
           color: var(--text-muted);
-
           font-family: monospace;
           font-size: 11px;
           font-weight: 700;
           letter-spacing: 0.3px;
-
           transition:
             color 140ms ease,
             border-color 140ms ease,
@@ -1527,89 +1041,56 @@ export default function WorkbenchPage({
           position: absolute;
           top: -5px;
           right: -5px;
-
           padding: 1px;
-
           border-radius: 50%;
           background: var(--bg-primary);
         }
 
-        .phase-rail-node-completed
-          .phase-rail-number {
+        .phase-rail-node-completed .phase-rail-number {
           color: var(--status-success);
-          border-color: rgba(
-            46,
-            125,
-            50,
-            0.65
-          );
+          border-color: rgba(46, 125, 50, 0.65);
         }
 
-        .phase-rail-node-completed
-          .phase-rail-mark {
+        .phase-rail-node-completed .phase-rail-mark {
           color: var(--status-success);
         }
 
-        .phase-rail-node-failed
-          .phase-rail-number {
+        .phase-rail-node-failed .phase-rail-number {
           color: var(--status-error);
-          border-color: rgba(
-            211,
-            47,
-            47,
-            0.7
-          );
+          border-color: rgba(211, 47, 47, 0.7);
         }
 
-        .phase-rail-node-failed
-          .phase-rail-mark {
+        .phase-rail-node-failed .phase-rail-mark {
           color: var(--status-error);
         }
 
-        .phase-rail-node-current
-          .phase-rail-number {
+        .phase-rail-node-current .phase-rail-number {
           color: var(--status-warning);
-          border-color: rgba(
-            245,
-            124,
-            0,
-            0.55
-          );
-
-          animation:
-            phase-pulse 1.8s
-            ease-out infinite;
+          border-color: rgba(245, 124, 0, 0.55);
+          animation: phase-pulse 1.8s ease-out infinite;
         }
 
-        .phase-rail-node-pending
-          .phase-rail-number {
+        .phase-rail-node-pending .phase-rail-number {
           opacity: 0.65;
         }
 
-        .phase-rail-node-active
-          .phase-rail-number {
+        .phase-rail-node-active .phase-rail-number {
           background: var(--bg-secondary);
           border-color: var(--text-primary);
-
           box-shadow:
             0 0 0 3px var(--bg-primary),
             0 0 0 4px var(--border-color);
         }
 
-        .phase-rail-node-active.phase-rail-node-completed
-          .phase-rail-number {
+        .phase-rail-node-active.phase-rail-node-completed .phase-rail-number {
           border-color: var(--status-success);
         }
 
-        .phase-rail-node-active.phase-rail-node-failed
-          .phase-rail-number {
+        .phase-rail-node-active.phase-rail-node-failed .phase-rail-number {
           border-color: var(--status-error);
         }
 
-        .phase-rail-node:not(
-            .phase-rail-node-pending
-          ):hover
-          .phase-rail-number {
+        .phase-rail-node:not(.phase-rail-node-pending):hover .phase-rail-number {
           background: var(--bg-secondary);
           color: var(--text-primary);
         }
@@ -1618,118 +1099,70 @@ export default function WorkbenchPage({
           outline: none;
         }
 
-        .phase-rail-node:focus-visible
-          .phase-rail-number {
-          outline: 2px solid
-            var(--text-secondary);
+        .phase-rail-node:focus-visible .phase-rail-number {
+          outline: 2px solid var(--text-secondary);
           outline-offset: 3px;
         }
 
         @keyframes phase-pulse {
           0% {
-            box-shadow:
-              0 0 0 0
-              rgba(
-                245,
-                124,
-                0,
-                0.35
-              );
+            box-shadow: 0 0 0 0 rgba(245, 124, 0, 0.35);
           }
 
           100% {
-            box-shadow:
-              0 0 0 7px
-              rgba(
-                245,
-                124,
-                0,
-                0
-              );
+            box-shadow: 0 0 0 7px rgba(245, 124, 0, 0);
           }
         }
 
         .phase-rail-tooltip {
           position: absolute;
-
           right: calc(100% + 12px);
           top: 50%;
-
-          transform:
-            translateY(-50%);
-
+          transform: translateY(-50%);
           width: 190px;
-
           padding: 10px 11px;
-
           display: flex;
           align-items: flex-start;
           gap: 10px;
-
           background: var(--bg-primary);
-          border: 1px solid
-            var(--border-color);
-
-          box-shadow:
-            0 8px 24px
-            rgba(0, 0, 0, 0.18);
-
+          border: 1px solid var(--border-color);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
           text-align: left;
-
           opacity: 0;
           visibility: hidden;
           pointer-events: none;
-
-          transition:
-            opacity 120ms ease,
-            visibility 120ms ease;
+          transition: opacity 120ms ease, visibility 120ms ease;
         }
 
         .phase-rail-tooltip::after {
           content: '';
-
           position: absolute;
-
           right: -5px;
           top: 50%;
-
           width: 8px;
           height: 8px;
-
           background: var(--bg-primary);
-
-          border-top: 1px solid
-            var(--border-color);
-
-          border-right: 1px solid
-            var(--border-color);
-
-          transform:
-            translateY(-50%)
-            rotate(45deg);
+          border-top: 1px solid var(--border-color);
+          border-right: 1px solid var(--border-color);
+          transform: translateY(-50%) rotate(45deg);
         }
 
-        .phase-rail-node:hover
-          .phase-rail-tooltip,
-        .phase-rail-node:focus-visible
-          .phase-rail-tooltip {
+        .phase-rail-node:hover .phase-rail-tooltip,
+        .phase-rail-node:focus-visible .phase-rail-tooltip {
           opacity: 1;
           visibility: visible;
         }
 
         .phase-tooltip-number {
           flex-shrink: 0;
-
           font-family: monospace;
           font-size: 13px;
           font-weight: 700;
-
           color: var(--text-secondary);
         }
 
         .phase-tooltip-content {
           min-width: 0;
-
           display: flex;
           flex-direction: column;
           gap: 3px;
@@ -1740,95 +1173,45 @@ export default function WorkbenchPage({
           font-size: 10px;
           font-weight: 700;
           letter-spacing: 0.8px;
-
           color: var(--text-primary);
         }
 
         .phase-tooltip-description {
           font-size: 10px;
           line-height: 1.35;
-
           color: var(--text-muted);
         }
 
         .phase-tooltip-status {
           margin-top: 3px;
-
           font-family: monospace;
           font-size: 8px;
           font-weight: 700;
           letter-spacing: 0.7px;
-
           color: var(--text-secondary);
         }
 
-        .phase-rail-node-completed
-          .phase-tooltip-status {
+        .phase-rail-node-completed .phase-tooltip-status {
           color: var(--status-success);
         }
 
-        .phase-rail-node-failed
-          .phase-tooltip-status {
+        .phase-rail-node-failed .phase-tooltip-status {
           color: var(--status-error);
         }
 
-        .phase-rail-node-current
-          .phase-tooltip-status {
+        .phase-rail-node-current .phase-tooltip-status {
           color: var(--status-warning);
         }
 
-        @media (hover: none) {
-          .phase-rail-tooltip {
-            display: none;
-          }
-        }
-
-        @media (max-width: 900px) {
-          .workbench-with-phase-rail {
-            --phase-rail-width: 38px;
-            --phase-rail-right: 8px;
-            --phase-node: 30px;
-
-            column-gap: 12px;
-          }
-
-          .phase-rail-number {
-            width: 26px;
-            height: 26px;
-            font-size: 10px;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .phase-rail-node-current
-            .phase-rail-number {
-            animation: none;
-          }
-
-          .phase-rail-line-fill,
-          .phase-rail-number,
-          .phase-rail-tooltip {
-            transition: none;
-          }
-        }
-
-        .investigation-layers {
-          display: flex;
-          flex-direction: column;
-          min-width: 0;
-        }
+        /* LAYERS */
 
         .investigation-layer {
-          border: 1px solid
-            var(--border-color);
-
+          border: 1px solid var(--border-color);
           background: var(--bg-secondary);
-
           transition:
             border-color 0.2s ease,
             opacity 0.2s ease,
             background 0.2s ease;
-
           scroll-margin-top: 18px;
         }
 
@@ -1838,21 +1221,11 @@ export default function WorkbenchPage({
         }
 
         .investigation-layer.layer-completed {
-          border-color: rgba(
-            46,
-            125,
-            50,
-            0.45
-          );
+          border-color: rgba(46, 125, 50, 0.45);
         }
 
         .investigation-layer.layer-failed {
-          border-color: rgba(
-            211,
-            47,
-            47,
-            0.5
-          );
+          border-color: rgba(211, 47, 47, 0.5);
         }
 
         .investigation-layer.layer-pending {
@@ -1862,20 +1235,14 @@ export default function WorkbenchPage({
         .layer-header {
           width: 100%;
           min-height: 62px;
-
           display: flex;
           align-items: center;
-
           gap: 14px;
-
           padding: 10px 14px;
-
           border: none;
           background: transparent;
-
           color: inherit;
           text-align: left;
-
           cursor: pointer;
         }
 
@@ -1886,22 +1253,15 @@ export default function WorkbenchPage({
         .layer-number {
           width: 38px;
           height: 38px;
-
           display: flex;
           align-items: center;
           justify-content: center;
-
           flex-shrink: 0;
-
-          border: 1px solid
-            var(--border-color);
-
+          border: 1px solid var(--border-color);
           background: var(--bg-primary);
-
           font-family: monospace;
           font-size: 12px;
           font-weight: 700;
-
           color: var(--text-muted);
         }
 
@@ -1911,24 +1271,12 @@ export default function WorkbenchPage({
         }
 
         .layer-completed .layer-number {
-          border-color: rgba(
-            46,
-            125,
-            50,
-            0.55
-          );
-
+          border-color: rgba(46, 125, 50, 0.55);
           color: var(--status-success);
         }
 
         .layer-failed .layer-number {
-          border-color: rgba(
-            211,
-            47,
-            47,
-            0.55
-          );
-
+          border-color: rgba(211, 47, 47, 0.55);
           color: var(--status-error);
         }
 
@@ -1942,7 +1290,6 @@ export default function WorkbenchPage({
           font-size: 12px;
           font-weight: 700;
           letter-spacing: 0.7px;
-
           color: var(--text-primary);
         }
 
@@ -1952,114 +1299,86 @@ export default function WorkbenchPage({
 
         .layer-subtitle {
           margin-top: 3px;
-
           font-size: 10px;
-
           color: var(--text-muted);
         }
 
         .layer-status {
           display: flex;
           align-items: center;
-
           gap: 10px;
-
           color: var(--text-muted);
-
           flex-shrink: 0;
         }
 
         .layer-result-badge {
           display: inline-flex;
           align-items: center;
-
           gap: 5px;
-
           padding: 4px 7px;
-
           border: 1px solid transparent;
-
           font-family: monospace;
           font-size: 9px;
           font-weight: 700;
           letter-spacing: 0.35px;
-
           white-space: nowrap;
         }
 
         .layer-result-badge.success {
           color: var(--status-success);
-
-          background: rgba(
-            46,
-            125,
-            50,
-            0.1
-          );
-
-          border-color: rgba(
-            46,
-            125,
-            50,
-            0.35
-          );
+          background: rgba(46, 125, 50, 0.1);
+          border-color: rgba(46, 125, 50, 0.35);
         }
 
         .layer-result-badge.failed {
           color: var(--status-error);
-
-          background: rgba(
-            211,
-            47,
-            47,
-            0.09
-          );
-
-          border-color: rgba(
-            211,
-            47,
-            47,
-            0.35
-          );
+          background: rgba(211, 47, 47, 0.09);
+          border-color: rgba(211, 47, 47, 0.35);
         }
 
         .layer-result-badge.current {
           color: var(--status-warning);
-
-          background: rgba(
-            245,
-            124,
-            0,
-            0.08
-          );
-
-          border-color: rgba(
-            245,
-            124,
-            0,
-            0.25
-          );
+          background: rgba(245, 124, 0, 0.08);
+          border-color: rgba(245, 124, 0, 0.25);
         }
 
         .status-dot {
           width: 7px;
           height: 7px;
-
-          border: 1px solid
-            currentColor;
-
+          border: 1px solid currentColor;
           border-radius: 50%;
         }
 
         .layer-content {
           padding: 0 10px 10px;
-
-          border-top: 1px solid
-            var(--border-color);
+          border-top: 1px solid var(--border-color);
         }
 
         .layer-content > * {
           margin-top: 10px;
+        }
+
+        /* RESPONSIVE */
+
+        @media (hover: none) {
+          .phase-rail-tooltip {
+            display: none;
+          }
+        }
+
+        @media (max-width: 900px) {
+          .workbench-with-phase-rail {
+            --phase-rail-width: 38px;
+            --phase-rail-right: 8px;
+            --phase-node: 30px;
+            column-gap: 12px;
+          }
+
+          .phase-rail-number {
+            width: 26px;
+            height: 26px;
+            font-size: 10px;
+          }
         }
 
         @media (max-width: 800px) {
@@ -2067,9 +1386,21 @@ export default function WorkbenchPage({
             display: none;
           }
 
-          .layer-status
-            .layer-result-badge {
+          .layer-status .layer-result-badge {
             display: none;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .phase-rail-node-current .phase-rail-number {
+            animation: none;
+          }
+
+          .phase-rail-line-fill,
+          .phase-rail-number,
+          .phase-rail-tooltip {
+            transition: none;
+            animation: none;
           }
         }
       `}</style>
