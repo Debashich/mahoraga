@@ -44,7 +44,7 @@ export default function InvestigationConfigPanel({
         <div className="form-group">
           <label className="form-label">Investigation Preset</label>
           <div className="preset-grid">
-            {['fast', 'balanced', 'maximum', 'custom'].map((p) => (
+            {['quick', 'standard', 'deep', 'custom'].map((p) => (
               <button
                 key={p}
                 className={`preset-btn ${preset === p ? 'active' : ''}`}
