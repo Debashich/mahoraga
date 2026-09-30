@@ -75,6 +75,7 @@ export default function JockyEditorPanel({
   const [insertedFeedback, setInsertedFeedback] = useState('');
 
   const fileInputRef = useRef(null);
+  const editorRef = useRef(null);
 
   // ---------------------------------------------------------------------------
   // Demo source
@@ -338,41 +339,101 @@ export default function JockyEditorPanel({
   // Capability insertion
   // ---------------------------------------------------------------------------
 
-  const handleInsertCapability = (cap) => {
-    const statement = `    collect ${cap.id} as ${cap.alias}\n`;
+ const handleInsertCapability = (cap) => {
+  const statement = `    collect ${cap.id} as ${cap.alias}`;
 
-    if (source.includes(`collect ${cap.id}`)) {
-      setInsertedFeedback(`Already collected: ${cap.id}`);
+  // Empty editor: create the complete investigation template.
+  if (!source.trim()) {
+    const template = `investigate endpoint {
+${statement}
+}`;
 
-      window.setTimeout(() => {
-        setInsertedFeedback('');
-      }, 2000);
+    onChangeSource(template);
 
-      return;
-    }
+    const cursorPosition =
+      template.indexOf(statement) + statement.length;
 
-    const match = source.match(/investigation\s+"[^"]+"\s*\{/);
+    window.requestAnimationFrame(() => {
+      const editor = editorRef.current;
 
-    if (match) {
-      const idx = match.index + match[0].length;
+      if (!editor) return;
 
-      const newSource =
-        source.slice(0, idx) +
-        '\n' +
-        statement +
-        source.slice(idx);
+      editor.focus();
+      editor.setSelectionRange(
+        cursorPosition,
+        cursorPosition
+      );
+    });
 
-      onChangeSource(newSource);
-    } else {
-      onChangeSource(source + '\n' + statement);
-    }
-
-    setInsertedFeedback(`Inserted: collect ${cap.id}`);
+    setInsertedFeedback(`Created investigation with ${cap.id}`);
 
     window.setTimeout(() => {
       setInsertedFeedback('');
     }, 2000);
-  };
+
+    return;
+  }
+
+  // Prevent duplicate capabilities.
+  if (source.includes(`collect ${cap.id}`)) {
+    setInsertedFeedback(`Already collected: ${cap.id}`);
+
+    window.setTimeout(() => {
+      setInsertedFeedback('');
+    }, 2000);
+
+    return;
+  }
+
+  const editor = editorRef.current;
+
+  if (!editor) return;
+
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+
+  const before = source.slice(0, start);
+  const after = source.slice(end);
+
+  const needsLeadingNewline =
+    before.length > 0 && !before.endsWith('\n');
+
+  const needsTrailingNewline =
+    after.length > 0 && !after.startsWith('\n');
+
+  const inserted =
+    `${needsLeadingNewline ? '\n' : ''}` +
+    statement +
+    `${needsTrailingNewline ? '\n' : ''}`;
+
+  const newSource =
+    before +
+    inserted +
+    after;
+
+  const newCursorPosition =
+    start + inserted.length;
+
+  onChangeSource(newSource);
+
+  window.requestAnimationFrame(() => {
+    const textarea = editorRef.current;
+
+    if (!textarea) return;
+
+    textarea.focus();
+    textarea.setSelectionRange(
+      newCursorPosition,
+      newCursorPosition
+    );
+  });
+
+  setInsertedFeedback(`Inserted: collect ${cap.id}`);
+
+  window.setTimeout(() => {
+    setInsertedFeedback('');
+  }, 2000);
+};
 
   const lineCount = source.split('\n').length;
   const charCount = source.length;
@@ -587,6 +648,7 @@ export default function JockyEditorPanel({
         </div>
 
         <textarea
+          ref={editorRef}
           className="editor-textarea"
           value={source}
           onChange={(e) => onChangeSource(e.target.value)}

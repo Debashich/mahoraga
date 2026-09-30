@@ -1,6 +1,6 @@
 start: investigation
 
-investigation: "investigation" ESCAPED_STRING "{" statement* "}"
+investigation: ("investigation" | "investigate") (ESCAPED_STRING | CNAME) "{" statement* "}"
 
 ?statement: collect_stmt 
           | correlate_stmt 
