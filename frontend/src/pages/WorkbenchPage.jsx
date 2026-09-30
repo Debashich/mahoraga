@@ -46,31 +46,31 @@ const LAYERS = [
   {
     id: 1,
     title: 'INVESTIGATION',
-    subtitle: 'Select / write Jocky investigation',
+    subtitle: '   Select / write Jocky investigation',
     short: 'INVESTIGATION',
   },
   {
     id: 2,
     title: 'INVESTIGATION CONFIGURATION',
-    subtitle: 'Target + capabilities + pre-flight readiness',
+    subtitle: '   Target + capabilities + pre-flight readiness',
     short: 'CONFIGURATION',
   },
   {
     id: 3,
     title: 'COMPILATION',
-    subtitle: 'Validate → IR → lower → prepare',
+    subtitle: '   Validate → IR → lower → prepare',
     short: 'COMPILATION',
   },
   {
     id: 4,
     title: 'FORENSIC EXECUTION',
-    subtitle: 'Native provider execution + collection',
+    subtitle: '   Native provider execution + collection',
     short: 'EXECUTION',
   },
   {
     id: 5,
     title: 'EVIDENCE & DETECTION',
-    subtitle: 'Seal → preserve → detect → report',
+    subtitle: '   Seal → preserve → detect → report',
     short: 'EVIDENCE',
   },
 ];
@@ -208,10 +208,7 @@ export default function WorkbenchPage({
     const source = jockySource.trim();
 
     const hasInvestigation =
-      /investigation\s+"[^"]+"/i.test(source) &&
-      source.includes('{');
-
-    const hasEmit = /emit\s+evidence/i.test(source);
+      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(source);
 
     /*
      * Correct correlate check.
@@ -238,19 +235,17 @@ export default function WorkbenchPage({
 
     const hasInvestigationName =
       investigationName.trim().length > 0 ||
-      /investigation\s+"[^"]+"/i.test(source);
+      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(source);
 
     const checks = [
       {
-        name: 'Jocky DSL Syntax',
-        status:
-          hasInvestigation && hasEmit
-            ? 'PASS'
-            : 'BLOCK',
-        detail:
-          hasInvestigation && hasEmit
-            ? 'Investigation block and emit statement detected.'
-            : 'Syntax Error: Missing investigation block or emit statement.',
+        name: 'Investigation Block',
+        status: hasInvestigation
+          ? 'PASS'
+          : 'BLOCK',
+        detail: hasInvestigation
+          ? 'Investigation block detected.'
+          : 'Missing investigate block.',
       },
 
       {
@@ -656,17 +651,19 @@ export default function WorkbenchPage({
 
     const sourceReady =
       jockySource.trim().length > 0 &&
-      /investigation\b/i.test(jockySource);
+      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(
+        jockySource
+      );
 
     const configReady =
-      (
-        investigationName.trim().length > 0 ||
-        /investigation\s+"[^"]+"/i.test(
-          jockySource
-        )
-      ) &&
-      activeCapabilities.length > 0 &&
-      Boolean(targetPlatform);
+    (
+      investigationName.trim().length > 0 ||
+      /investigate\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/i.test(
+        jockySource
+      )
+    ) &&
+    activeCapabilities.length > 0 &&
+    Boolean(targetPlatform);
 
     const preflightPassed =
       preflightResults?.passed === true &&

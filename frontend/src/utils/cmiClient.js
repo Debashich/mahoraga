@@ -58,16 +58,19 @@ export async function orchestrateInvestigation(
   targetPlatform
 ) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/orchestrate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        jocky_source: jockySource,
-        target_platform: targetPlatform,
-      }),
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/orchestrate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jocky_source: jockySource,
+          target_platform: targetPlatform,
+        }),
+      }
+    );
 
     const data = await response.json();
 
@@ -78,24 +81,31 @@ export async function orchestrateInvestigation(
       };
     }
 
-    const errorDetail = data.detail || {};
-    const pipelineStages = errorDetail.pipeline_stages || [];
+    const errorDetail = data?.detail || {};
+    const pipelineStages =
+      errorDetail.pipeline_stages || [];
 
     const failedStage = pipelineStages.find(
-      (s) => s.status === 'failed'
+      (stage) => stage.status === 'failed'
     );
 
     const errorMessage =
       failedStage?.output ||
+      errorDetail.output ||
       errorDetail.message ||
+      errorDetail.error ||
       'Orchestration execution failed';
 
     return {
       success: false,
       error: errorMessage,
-      stage: errorDetail.failed_stage || 'Unknown stage',
-      investigationId: errorDetail.investigation_id || null,
-      pipelineStages: pipelineStages,
+      stage:
+        errorDetail.failed_stage ||
+        failedStage?.stage ||
+        'Unknown stage',
+      investigationId:
+        errorDetail.investigation_id || null,
+      pipelineStages,
       detail: errorDetail,
     };
   } catch (err) {

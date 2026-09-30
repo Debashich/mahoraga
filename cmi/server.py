@@ -126,13 +126,13 @@ async def get_example(filename: str):
 
 def generate_investigation_id(jocky_source: str) -> str:
     match = re.search(
-        r'investigation\s+"([^"]+)"',
+        r'(?:investigation|investigate)\s+(?:"([^"]+)"|([A-Za-z0-9_]+))',
         jocky_source or "",
         re.IGNORECASE,
     )
 
     investigation_name = (
-        match.group(1).strip()
+        (match.group(1) or match.group(2)).strip()
         if match
         else "Investigation"
     )
