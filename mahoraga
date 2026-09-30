@@ -10,10 +10,72 @@ else
 fi
 
 if [ -z "$1" ]; then
-    echo "Usage: ./mahoraga <script.jocky>"
+    echo "Usage:"
+    echo "  ./mahoraga <script.jocky>       # Full pipeline: Compile -> Encrypt -> Run -> Seal"
+    echo "  ./mahoraga build <script.jocky> # Build only: Compile -> Encrypted .enc payload"
+    echo "  ./mahoraga <payload.enc>        # Execute pre-compiled payload directly"
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Mode A: Build Only (Compile + Polymorphic Encryption -> .enc)
+# ---------------------------------------------------------------------------
+if [ "$1" = "build" ]; then
+    if [ -z "$2" ]; then
+        echo "Usage: ./mahoraga build <script.jocky>"
+        exit 1
+    fi
+    SRC="$2"
+    BASE_NAME=$(basename "$SRC" .jocky)
+    mkdir -p out/instructions
+    INSTRUCTION_OUT="out/instructions/${BASE_NAME}.json"
+    ENCRYPTED_OUT="out/instructions/${BASE_NAME}.enc"
+
+    echo "[1/2] Compiling $SRC to IR/Instructions..."
+    $PYTHON -m compiler compile "$SRC" --out "$INSTRUCTION_OUT"
+    echo "      -> Plain IR: $INSTRUCTION_OUT"
+
+    echo "[2/2] Generating polymorphic encrypted payload..."
+    $PYTHON -m compiler.obfuscator "$INSTRUCTION_OUT" "$ENCRYPTED_OUT"
+    echo
+    echo "[OK] Portable payload built successfully: $ENCRYPTED_OUT"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Mode B: Direct .enc Execution (Pre-compiled cross-platform payload)
+# ---------------------------------------------------------------------------
+if [[ "$1" == *.enc ]]; then
+    ENCRYPTED_SRC="$1"
+    BASE_NAME=$(basename "$ENCRYPTED_SRC" .enc)
+    mkdir -p out/evidence
+    RAW_EVIDENCE="out/evidence/raw_evidence.json"
+    SEALED_EVIDENCE="out/evidence/${BASE_NAME}_sealed.json"
+    INSTRUCTION_OUT="out/instructions/${BASE_NAME}.json"
+    STIX_OUT="out/evidence/${BASE_NAME}_stix.json"
+
+    echo "[1/2] Executing pre-compiled native payload: $ENCRYPTED_SRC..."
+    ./build/mahoraga-run "$ENCRYPTED_SRC"
+
+    echo "[2/2] Cryptographically sealing evidence..."
+    $PYTHON -m evidence.sealing "$RAW_EVIDENCE" "$SEALED_EVIDENCE"
+
+    if [ -f "$INSTRUCTION_OUT" ]; then
+        $PYTHON -m detection.engine "$INSTRUCTION_OUT" "$SEALED_EVIDENCE" "$STIX_OUT" 2>/dev/null || true
+    fi
+
+    echo
+    echo "Investigation successfully completed!"
+    echo "   -> Sealed Evidence: $SEALED_EVIDENCE"
+    if [ -f "$STIX_OUT" ]; then
+        echo "   -> STIX Bundle:     $STIX_OUT"
+    fi
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Mode C: Standard Full Pipeline (.jocky -> Compile -> Encrypt -> Run -> Seal)
+# ---------------------------------------------------------------------------
 SRC="$1"
 
 BASE_NAME=$(basename "$SRC" .jocky)
