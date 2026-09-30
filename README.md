@@ -1,235 +1,707 @@
-# Mahoraga Setup & Contributor Guide
+# Mahoraga
 
-Mahoraga is an enterprise-grade forensic compiler and orchestration framework built around a custom domain-specific language (**Jocky**). It compiles forensic intent into a language-independent Forensic IR, lowerable into a custom MLIR dialect, executes operations via cross-platform C++ native providers (Linux & Windows), preserves collected evidence through cryptographic sealing, and produces standardized STIX 2.1 threat-intelligence output.
+**Compiler-driven digital forensics with a cross-platform execution model.**
+
+Mahoraga is a forensic investigation and orchestration framework built around **Jocky**, a custom domain-specific language (DSL) for expressing forensic intent.
+
+Jocky investigations are parsed, semantically validated, lowered into a platform-independent **Forensic IR**, and executed through native providers for **Linux and Windows**. Collected evidence is cryptographically sealed and can be transformed into standardized **STIX 2.1** threat-intelligence output.
+
+The project combines a custom investigation language, compiler pipeline, native execution runtime, evidence integrity layer, and browser-based forensic Workbench into a single workflow.
 
 ---
 
-## Architecture Overview
-
-The Mahoraga pipeline consists of four primary operational stages:
-
-1. **Compiler & MLIR Dialect (Python):** Lexes and parses the Jocky DSL into an Abstract Syntax Tree (AST), performs substructural type enforcement and capability validation, and lowers the program into a JSON Instruction Contract (Forensic IR).
-2. **Polymorphic Encapsulation & Native Runtime (Python + C++):** The generated IR is transformed into a unique AES-256-XOR encrypted binary payload per compilation instance. The native C++ runtime reads the payload, extracts key material in-memory, decrypts the IR, parses the instruction contract, and dispatches execution to native providers (Linux `/proc` & Netlink / Windows Win32 API & ETW).
-3. **Cryptographic Evidence Sealing (Python):** Collected evidence is canonicalized, cryptographically hashed, and sealed using SHA-256 and Merkle Mountain Range (MMR) manifests to maintain chain-of-custody integrity.
-4. **Threat Intelligence Engine (Python):** Evaluates behavioral sequences using Past-Time Linear Temporal Logic (PLTL) rules and outputs standardized STIX 2.1 JSON intelligence bundles.
-
-### Execution Flow
+## Core Workflow
 
 ```text
-Jocky Source (.jocky)
-     │
-     ▼
-Jocky Compiler / Semantic Validator
-     │
-     ▼
-Forensic IR / MLIR Dialect (.json)
-     │
-     ▼
-Polymorphic Obfuscator (AES-256-XOR)
-     │
-     ▼
-Encrypted Payload (.enc)
-     │
-     ▼
-Native C++ Runtime (mahoraga-run)
-     │
-     ├── In-Memory Decryption
-     ├── Dynamic Syscall / API Resolution
-     └── Dispatch to Native Provider
-              │
-              ├── Linux Provider  (/proc, Netlink, eBPF)
-              └── Windows Provider (Win32, ETW, Toolhelp32)
-              │
-              ▼
-        Raw Evidence
-              │
-              ▼
-  Cryptographic Evidence Sealing (SHA-256 / MMR)
-              │
-              ▼
-   STIX 2.1 Threat Intelligence Bundle
-
+                    JOCKY DSL
+                       │
+                       ▼
+              Lexer / Parser / AST
+                       │
+                       ▼
+          Semantic & Capability Validation
+                       │
+                       ▼
+                  Forensic IR
+                       │
+                       ▼
+             Payload Encapsulation
+                       │
+                       ▼
+              Native C++ Runtime
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+        Linux Provider    Windows Provider
+              │                 │
+              └────────┬────────┘
+                       ▼
+                  Raw Evidence
+                       │
+                       ▼
+             Cryptographic Sealing
+                       │
+                       ▼
+                   STIX 2.1
 ```
 
----
-
-## Prerequisites
-
-Ensure your development environment has the following installed:
-
-* **Docker & Docker Compose:** Required for running the orchestration stack.
-* **Node.js:** v20+ (for local frontend development)
-* **Python:** 3.12+
-* **C++ Compiler:** GCC/Clang with C++17 support or MSVC (Windows)
-* **CMake:** 3.14+
-
----
-
-## Quick Start (Dockerized Stack)
-
-The fastest way to launch the full Mahoraga Central Management Interface (CMI) and FastAPI backend is via Docker Compose:
-
-```bash
-# Clone the repository
-git clone <repository-url> mahoraga
-cd mahoraga
-
-# Build C++ runtime binaries locally (optional for host execution)
-mkdir -p build && cd build
-cmake .. && make -j$(nproc)
-cd ..
-
-# Spin up the FastAPI backend and TSX Command Center UI
-docker-compose up --build
-
-```
-
-Access the **Jocky Forensic Workbench** at:
-
-* **Frontend Command Center:** `http://localhost:5173` (or `http://localhost:80`)
-* **FastAPI CMI Backend:** `http://localhost:8000`
-* **Interactive API Docs:** `http://localhost:8000/docs`
-
----
-
-## Local Development & CLI Usage
-
-### 1. Environment Setup
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r backend/requirements.txt
-uvicorn cmi.server:app --host 0.0.0.0 --port 8000
-```
-
-### 2. Native Runtime Build
-
-```bash
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-cd ..
-
-```
-
-This compiles the executable native runtime at `build/mahoraga-run`.
-
-### 3. Running via CLI Pipeline
-
-Execute a end-to-end investigation from the command line:
-
-```bash
-./mahoraga library/triage_host_baseline.jocky
-
-```
-
-Artifacts are automatically emitted to:
+### Investigation lifecycle
 
 ```text
-out/
-├── instructions/
-│   ├── <inv_id>.json        # Plaintext Forensic IR
-│   └── <inv_id>.enc         # Polymorphic Encrypted Payload
-└── evidence/
-    ├── raw_evidence.json    # Provider output
-    ├── <inv_id>_sealed.json # SHA-256 sealed chain-of-custody
-    └── <inv_id>_stix.json   # STIX 2.1 bundle
-
+Write Jocky
+    ↓
+Pre-Flight
+    ↓
+Compile
+    ↓
+Execute
+    ↓
+Evidence
+    ↓
+Detection / STIX
 ```
 
 ---
 
-## Project Structure
+## Why Jocky?
+
+Traditional forensic collection often couples investigation logic directly to the implementation details of a particular operating system or collection tool.
+
+Jocky separates **investigation intent** from **platform-specific execution**.
+
+For example:
+
+```jocky
+investigate endpoint {
+    collect system_info as sys
+    collect process_list as procs
+    collect network_connections as conns
+}
+```
+
+The investigation describes **what evidence is required**.
+
+The native provider determines **how that evidence is collected on the target platform**.
+
+This allows the same investigation model to be reused where the requested capabilities are supported on both operating systems.
+
+---
+
+# Features
+
+### Jocky DSL
+
+- Custom forensic investigation language
+- Structured investigation blocks
+- Collection capabilities
+- Semantic and capability validation
+- Platform-independent investigation intent
+
+### Compiler Pipeline
+
+- Lexer and parser
+- Abstract Syntax Tree (AST)
+- Semantic validation
+- Capability resolution
+- Forensic IR generation
+- Native execution contract
+
+### Native Execution
+
+- C++ execution runtime
+- Linux native provider
+- Windows native provider
+- Platform-specific collection implementations
+- Native dispatch from the compiled instruction contract
+
+### Evidence Integrity
+
+- Structured evidence collection
+- Canonicalized evidence artifacts
+- SHA-256 integrity hashing
+- Cryptographic evidence sealing
+- Evidence manifests
+
+### Threat Intelligence
+
+- Investigation result processing
+- Behavioral detection rules
+- STIX 2.1 JSON output
+- MITRE ATT&CK-oriented detection workflows where applicable
+
+### Forensic Workbench
+
+- Live Jocky editor
+- Capability insertion controls
+- Pre-flight validation
+- Compilation workflow
+- Native execution
+- Pipeline telemetry
+- Evidence inspection
+- STIX output inspection
+
+---
+
+# Platform Support
+
+Mahoraga supports both **Linux and Windows** through separate native providers.
+
+The Jocky language is shared across platforms, but **not every capability is necessarily available on every platform**.
+
+| Capability | Linux | Windows |
+|---|:---:|:---:|
+| `system_info` | ✓ | ✓ |
+| `process_list` | ✓ | ✓ |
+| `network_connections` | ✓ | ✓ |
+| `users` | ✓ | ✓ |
+| `auth_logs` | ✓ | Platform-specific |
+| Linux `/proc` interfaces | ✓ | — |
+| Linux Netlink interfaces | ✓ | — |
+| Windows native APIs | — | ✓ |
+
+Platform-specific capabilities should only be requested against a compatible target.
+
+The compiler/runtime architecture intentionally keeps platform-specific collection behind native providers rather than exposing operating-system implementation details directly in Jocky.
+
+---
+
+# Repository Structure
 
 ```text
 mahoraga/
-├── docker-compose.yml           # Master orchestration container config
-├── mahoraga                     # CLI pipeline wrapper script
-├── CMakeLists.txt               # Native C++ build configuration
 │
-├── backend/                     # FastAPI CMI Backend Service
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── server.py                # REST API & Telemetry endpoints
+├── mahoraga                     # CLI entry point
+├── CMakeLists.txt               # Native runtime build
+├── docker-compose.yml           # Containerized deployment
 │
-├── frontend/                    # Vite + React (TSX) Command Center UI
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── tailwind.config.js
-│   └── src/
-│       ├── App.jsx
-│       ├── api/cmiClient.js     # Backend client communication
-│       ├── components/
-│       │   ├── JockyEditorPanel.jsx
-│       │   ├── PipelineStatusPanel.jsx
-│       │   └── ResultSummaryCard.jsx
-│       └── pages/
-│           └── WorkbenchPage.jsx
+├── cmi/
+│   └── server.py                # FastAPI CMI service
 │
-├── compiler/                    # Jocky Compiler & MLIR Lowering
-│   ├── ast.py                   # Abstract Syntax Tree definitions
-│   ├── capabilities.py          # Effect & Capability validation
-│   ├── lower.py                 # Forensic IR lowering passes
-│   ├── obfuscator.py            # AES-256-XOR polymorphic encryptor
-│   ├── parser.py                # Lark-based DSL parser
-│   └── validator.py             # Substructural type & capability validator
+├── compiler/
+│   ├── ast.py                   # AST definitions
+│   ├── capabilities.py          # Capability validation
+│   ├── lower.py                 # Forensic IR lowering
+│   ├── obfuscator.py            # Payload transformation
+│   ├── parser.py                # Jocky parser
+│   └── validator.py             # Semantic validation
 │
-├── detection/                   # PLTL Detection & STIX 2.1 Serialization
+├── language/
+│   └── grammar.lark             # Jocky grammar
+│
+├── runtime/
+│   ├── main.cpp                 # Native runtime entry point
+│   ├── core/
+│   │   ├── Dispatcher.cpp       # Runtime dispatch
+│   │   └── Runtime.cpp
+│   └── providers/
+│       ├── linux/
+│       │   └── LinuxProvider.cpp
+│       └── windows/
+│           └── WindowsProvider.cpp
+│
+├── evidence/
+│   ├── hashing.py
+│   ├── schema.py
+│   └── sealing.py
+│
+├── detection/
 │   ├── engine.py
 │   ├── pltl.py
 │   ├── rules.py
 │   └── stix.py
 │
-├── evidence/                    # Cryptographic Sealing & MMR Hashes
-│   ├── hashing.py
-│   ├── schema.py
-│   └── sealing.py
+├── library/
+│   └── *.jocky                  # Investigation examples
 │
-├── library/                     # Standard Library (`std`) Jocky Scripts
-│   ├── brute_force_hunt.jocky
-│   ├── deep_persistence_hunt.jocky
-│   ├── edr_blinding_hunt.jocky
-│   ├── exfiltration_monitor.jocky
-│   ├── lateral_movement_trace.jocky
-│   ├── stealth_host_sweep.jocky
-│   └── triage_host_baseline.jocky
+├── frontend/
+│   ├── package.json
+│   └── src/
+│       ├── api/
+│       │   └── cmiClient.js
+│       ├── components/
+│       │   └── workbench/
+│       │       └── JockyEditorPanel.jsx
+│       └── pages/
+│           └── WorkbenchPage.jsx
 │
-├── runtime/                     # Native C++ Execution Engine
-│   ├── main.cpp
-│   ├── core/
-│   │   ├── Dispatcher.cpp       # Payload decryption & router
-│   │   └── Runtime.cpp
-│   └── providers/
-│       ├── linux/               # Linux native provider (/proc, Netlink)
-│       │   └── LinuxProvider.cpp
-│       └── windows/             # Windows native provider (Win32, ETW)
-│           └── WindowsProvider.cpp
+├── backend/
+│   ├── Dockerfile
+│   └── requirements.txt
 │
-└── out/                         # Pipeline build output artifacts (git-ignored)
-
+└── out/                         # Generated artifacts
 ```
 
 ---
 
-## Jocky Standard Library (`std`)
+# Prerequisites
 
-Mahoraga ships with pre-compiled standard library scripts mapping directly to MITRE ATT&CK techniques:
+### Linux
 
-| Library File | Target Tactic | Key Capabilities & Metrics |
-| --- | --- | --- |
-| `library/triage_host_baseline.jocky` | Discovery (**TA0007**) | Process & socket correlation, Shannon entropy memory analysis ($H(X) > 7.2$). |
-| `library/edr_blinding_hunt.jocky` | Defense Evasion (**TA0005**) | BYOVD detection, kernel callback array audit (`PspCreateProcessNotifyRoutine`). |
-| `library/lateral_movement_trace.jocky` | Lateral Movement (**TA0008**) | Subnet session mapping, sliding $10\text{s}$ credential-stuffing detection window. |
-| `library/exfiltration_monitor.jocky` | Exfiltration (**TA0010**) | Outbound process byte monitoring ($>500\text{MB}$ threshold), staging archive detection. |
-| `library/deep_persistence_hunt.jocky` | Persistence (**TA0003**) | WMI permanent event consumers (`CommandLineEventConsumer`), IFEO registry hooks. |
+- Python 3.12+
+- Node.js 20+
+- GCC or Clang with C++17 support
+- CMake 3.14+
+- Git
+
+### Windows
+
+- Python 3.12+
+- Node.js 20+
+- Visual Studio / MSVC with C++ support
+- CMake 3.14+
+- Git
+
+### Optional
+
+- Docker
+- Docker Compose
+
+Docker is only required when using the containerized deployment workflow.
 
 ---
 
-## Design Principles
+# Local Development
 
-* **Compiler-Driven Forensics:** Investigators express platform-agnostic intent; the compiler decides safe, stealthy execution lowering.
-* **Signature Immunity:** Every build produces a structurally unique, polymorphically encrypted binary payload with a distinct SHA-256 hash.
-* **Zero-Shell Footprint:** Eliminates reliance on `cmd.exe`, `powershell.exe`, or subprocess spawns by utilizing direct native APIs.
-* **Substructural Evidence Custody:** Enforces linear evidence consumption at compile-time to prevent accidental data dropping without sealing.
-* **Standardized Intelligence:** Native serialization into STIX 2.1 bundles annotated with explicit MITRE ATT&CK IDs.
+## 1. Clone the repository
+
+```bash
+git clone <repository-url> mahoraga
+cd mahoraga
+```
+
+---
+
+## 2. Create the Python virtual environment
+
+### Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### Windows
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+---
+
+## 3. Install Python dependencies
+
+With the virtual environment activated:
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+---
+
+## 4. Start the CMI backend
+
+**After activating the virtual environment**, start the FastAPI CMI service:
+
+```bash
+uvicorn cmi.server:app --host 0.0.0.0 --port 8000
+```
+
+The service exposes:
+
+```text
+CMI API       http://localhost:8000
+Health        http://localhost:8000/health
+API Docs      http://localhost:8000/docs
+```
+
+Keep this process running while using the browser-based Workbench.
+
+---
+
+# Frontend Development
+
+Open a second terminal from the repository root.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite development server normally runs at:
+
+```text
+http://localhost:5173
+```
+
+The frontend communicates with the CMI backend through the configured API/proxy settings.
+
+---
+
+# Native Runtime
+
+Mahoraga uses a native C++ runtime for forensic capability execution.
+
+## Linux
+
+```bash
+mkdir -p build
+cd build
+cmake ..
+make -j$(nproc)
+cd ..
+```
+
+## Windows
+
+```powershell
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Release
+cd ..
+```
+
+The generated runtime is used by the Mahoraga execution pipeline.
+
+---
+
+# Jocky Forensic Workbench
+
+The Workbench provides an interactive interface for authoring and executing investigations.
+
+## Workflow
+
+### Step 1 — Investigation Configuration
+
+Select the target platform and prepare the investigation.
+
+### Step 2 — Pre-Flight Analysis
+
+The Jocky source is checked before compilation.
+
+### Step 3 — Compilation
+
+The investigation is compiled into the Forensic IR/instruction contract.
+
+### Step 4 — Forensic Execution
+
+The CMI backend executes the investigation through the native runtime.
+
+### Step 5 — Evidence & Detection
+
+Collected evidence, integrity information, and STIX output can be inspected.
+
+---
+
+## Live Jocky Editing
+
+A new investigation starts with an empty editor.
+
+The editor provides a lightweight placeholder:
+
+```text
+//Paste your Jocky code here...
+```
+
+The **Insert Capability** controls provide a guided starting point.
+
+When the editor is empty, selecting a capability creates a complete investigation:
+
+```jocky
+investigate endpoint {
+    collect system_info as sys
+}
+```
+
+After the investigation exists, additional capabilities can be inserted at the current cursor position:
+
+```jocky
+investigate endpoint {
+    collect system_info as sys
+    collect process_list as procs
+    collect network_connections as conns
+}
+```
+
+This allows investigators to start from a single capability without having to remember the complete Jocky block syntax.
+
+---
+
+# Jocky Examples
+
+Example investigations are provided under `library/`.
+
+```text
+library/
+├── brute_force_hunt.jocky
+├── deep_persistence_hunt.jocky
+├── edr_blinding_hunt.jocky
+├── exfiltration_monitor.jocky
+├── lateral_movement_trace.jocky
+├── stealth_host_sweep.jocky
+└── triage_host_baseline.jocky
+```
+
+A minimal investigation:
+
+```jocky
+investigate endpoint {
+    collect system_info as sys
+}
+```
+
+A multi-capability investigation:
+
+```jocky
+investigate endpoint {
+    collect system_info as sys
+    collect process_list as procs
+    collect users as local_users
+    collect network_connections as conns
+}
+```
+
+---
+
+# CLI Usage
+
+Mahoraga can execute an investigation directly through the command-line pipeline.
+
+## Linux
+
+```bash
+source .venv/bin/activate
+./mahoraga library/triage_host_baseline.jocky
+```
+
+## Windows
+
+```powershell
+.venv\Scripts\activate
+.\mahoraga library\triage_host_baseline.jocky
+```
+
+The exact set of capabilities available to an investigation depends on the target platform and the capabilities implemented by its native provider.
+
+---
+
+# Execution Pipeline
+
+A successful investigation follows this general pipeline:
+
+```text
+Jocky Source
+     │
+     ▼
+Compiler
+     │
+     ▼
+Forensic IR
+     │
+     ▼
+Payload Generation
+     │
+     ▼
+Native Runtime
+     │
+     ▼
+Native Provider
+     │
+     ▼
+Raw Evidence
+     │
+     ▼
+Evidence Sealing
+     │
+     ▼
+STIX 2.1
+```
+
+The CMI exposes execution telemetry for the major runtime stages.
+
+---
+
+# Generated Artifacts
+
+Investigation artifacts are written under `out/`.
+
+```text
+out/
+├── instructions/
+│   ├── <inv_id>.json
+│   └── <inv_id>.enc
+│
+└── evidence/
+    ├── raw_evidence.json
+    ├── <inv_id>_sealed.json
+    └── <inv_id>_stix.json
+```
+
+### Artifacts
+
+| Artifact | Purpose |
+|---|---|
+| `<inv_id>.json` | Compiled Forensic IR / instruction contract |
+| `<inv_id>.enc` | Runtime payload |
+| `raw_evidence.json` | Native provider output |
+| `<inv_id>_sealed.json` | Sealed evidence artifact |
+| `<inv_id>_stix.json` | STIX 2.1 output |
+
+Generated files under `out/` are not intended to be committed to the repository.
+
+---
+
+# Evidence Integrity
+
+Evidence is treated as a first-class output of the investigation pipeline.
+
+```text
+Native Provider
+      │
+      ▼
+Raw Evidence
+      │
+      ▼
+Canonicalization
+      │
+      ▼
+SHA-256 Integrity Hash
+      │
+      ▼
+Sealed Evidence
+      │
+      ▼
+STIX 2.1
+```
+
+The sealing stage produces integrity information that can be used to detect subsequent modification of the generated evidence artifact.
+
+---
+
+# STIX 2.1
+
+Mahoraga can transform investigation results into standardized STIX 2.1 JSON bundles.
+
+Generated bundles are stored at:
+
+```text
+out/evidence/<inv_id>_stix.json
+```
+
+The Workbench exposes the resulting detection and STIX state through the CMI interface.
+
+---
+
+# Docker
+
+A containerized development/deployment workflow is available through Docker Compose.
+
+From the repository root:
+
+```bash
+docker-compose up --build
+```
+
+The exact service ports are defined in `docker-compose.yml`.
+
+Typical development endpoints are:
+
+```text
+Frontend       http://localhost:5173
+CMI Backend    http://localhost:8000
+API Docs       http://localhost:8000/docs
+```
+
+For active compiler/runtime development, the local workflow is generally more convenient because the native runtime can be built directly for the host platform.
+
+---
+
+# Development Workflow
+
+For a typical change:
+
+```text
+1. Modify Jocky / compiler / runtime
+              │
+              ▼
+2. Run validation
+              │
+              ▼
+3. Build native runtime if required
+              │
+              ▼
+4. Start CMI backend
+              │
+              ▼
+5. Test through Workbench or CLI
+              │
+              ▼
+6. Inspect evidence and STIX output
+```
+
+### Backend
+
+```bash
+source .venv/bin/activate
+uvicorn cmi.server:app --host 0.0.0.0 --port 8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+---
+## Jocky Standard Library
+
+Mahoraga ships with a set of ready-to-run Jocky investigation scripts covering common endpoint, process, network, and suspicious-activity investigation workflows.
+
+| **Library File** | **Investigation Focus** |
+|---|---|
+| `library/endpoint_triage.jocky` | Endpoint-level triage and host discovery |
+| `library/host_and_network_investigation.jocky` | Host and network investigation |
+| `library/process_network_correlation.jocky` | Process and network activity correlation |
+| `library/suspicious_host_activity.jocky` | Investigation of suspicious endpoint activity |
+
+These scripts can be executed directly through the Mahoraga CLI or loaded into the Jocky Forensic Workbench for inspection and modification.
+
+### Example
+
+```bash
+./mahoraga library/endpoint_triage.jocky
+```
+
+Or load the script into the Workbench to inspect the Jocky investigation, run pre-flight validation, compile it, and execute it against the selected target platform.
+
+The library is intended to provide practical starting points for investigations while demonstrating how multiple forensic capabilities can be composed through Jocky.
+
+---
+# Design Principles
+
+### Compiler-Driven Forensics
+
+Investigators express forensic intent through a dedicated language rather than directly implementing platform-specific collection logic.
+
+### Intent / Execution Separation
+
+Jocky describes **what to investigate**. Native providers implement **how that investigation is performed** on the target operating system.
+
+### Cross-Platform Execution
+
+The compiler and IR provide a common investigation model while native providers handle platform-specific execution.
+
+### Evidence Integrity
+
+Evidence sealing is part of the execution pipeline rather than an optional post-processing step.
+
+### Standardized Output
+
+STIX 2.1 provides a standardized representation for downstream threat-intelligence workflows.
+
+### Explicit Validation
+
+Investigation capabilities are validated before execution so unsupported or invalid operations can be rejected before reaching the native runtime.
