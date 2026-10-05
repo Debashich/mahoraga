@@ -22,7 +22,7 @@ The project combines a custom investigation language, compiler pipeline, native 
 
 ## Demo Video
 
-*[Leave space for Demo Video link or embed here]*
+https://github.com/user-attachments/assets/56a9aa97-fb87-4603-be3b-88f70d457c89
 
 ---
 
