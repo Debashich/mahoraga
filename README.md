@@ -1,12 +1,28 @@
+<div align="center">
+  <img src="assets/moharaga.png" alt="Mahoraga Logo" width="200" />
+</div>
+
 # Mahoraga
+
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 
 **Compiler-driven digital forensics with a cross-platform execution model.**
 
 Mahoraga is a forensic investigation and orchestration framework built around **Jocky**, a custom domain-specific language (DSL) for expressing forensic intent.
 
+[Documentation is available at jocky.devloper.xyz](https://jocky.devloper.xyz/)
+
 Jocky investigations are parsed, semantically validated, lowered into a platform-independent **Forensic IR**, and executed through native providers for **Linux and Windows**. Collected evidence is cryptographically sealed and can be transformed into standardized **STIX 2.1** threat-intelligence output.
 
 The project combines a custom investigation language, compiler pipeline, native execution runtime, evidence integrity layer, and browser-based forensic Workbench into a single workflow.
+
+---
+
+## Demo Video
+
+*[Leave space for Demo Video link or embed here]*
 
 ---
 
@@ -87,6 +103,20 @@ This allows the same investigation model to be reused where the requested capabi
 
 ---
 
+## Expected Solution and Problem Addressed
+
+Mahoraga is built to solve the challenges in modern forensic system analysis, where standard tools are blocked by behavioral heuristics, signature matching, and kernel-level monitoring of Endpoint Detection and Response (EDR) and Antivirus solutions.
+
+To detect adversaries without triggering security solutions, Jocky targets the following key paradigms:
+
+1. **Independent Programming Language**: Jocky is a custom language and framework utilizing a language-independent intermediate representation (like MLIR/LLVM frontend) that alters basic control-flow graphs, token generation, and binary structures, rendering signature-based detection ineffective.
+2. **Polymorphism in Generated Scripts/Functions**: Mahoraga uses a continuous delivery pipeline instead of manual binary packing. Every iteration passes through integrated obfuscators, variable-encryption routines, and polymorphic engines. This ensures that every deployment instance possesses unique hashes, modified entry points, and altered import tables, neutralizing traditional file-reputation databases.
+3. **Living-off-the-Land & BYOVD Execution**: Scripts and functions avoid standard, noisy API calls for core operations like persistence, privilege escalation, and network routing (SOCKS5). It instead relies on:
+   - **In-Memory Execution**: Utilizing multiple distinct file-less techniques (e.g., process hollowing, reflective DLL injection, API unhooking, direct system calls, or thread execution hijacking) to run secondary scripts entirely within the memory space of trusted processes.
+   - **Kernel-Level Subversion**: Detection of legitimate or vulnerable third-party drivers (BYOVD) to disable EDR callbacks or manipulate kernel structures directly, blinding security agents running in user or kernel space.
+
+---
+
 # Features
 
 ### Jocky DSL
@@ -155,9 +185,9 @@ The Jocky language is shared across platforms, but **not every capability is nec
 | `network_connections` | ✓ | ✓ |
 | `users` | ✓ | ✓ |
 | `auth_logs` | ✓ | Platform-specific |
-| Linux `/proc` interfaces | ✓ | — |
-| Linux Netlink interfaces | ✓ | — |
-| Windows native APIs | — | ✓ |
+| Linux `/proc` interfaces | ✓ | N/A |
+| Linux Netlink interfaces | ✓ | N/A |
+| Windows native APIs | N/A | ✓ |
 
 Platform-specific capabilities should only be requested against a compatible target.
 
@@ -373,23 +403,23 @@ The Workbench provides an interactive interface for authoring and executing inve
 
 ## Workflow
 
-### Step 1 — Investigation Configuration
+### Step 1 - Investigation Configuration
 
 Select the target platform and prepare the investigation.
 
-### Step 2 — Pre-Flight Analysis
+### Step 2 - Pre-Flight Analysis
 
 The Jocky source is checked before compilation.
 
-### Step 3 — Compilation
+### Step 3 - Compilation
 
 The investigation is compiled into the Forensic IR/instruction contract.
 
-### Step 4 — Forensic Execution
+### Step 4 - Forensic Execution
 
 The CMI backend executes the investigation through the native runtime.
 
-### Step 5 — Evidence & Detection
+### Step 5 - Evidence & Detection
 
 Collected evidence, integrity information, and STIX output can be inspected.
 
