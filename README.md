@@ -103,17 +103,27 @@ This allows the same investigation model to be reused where the requested capabi
 
 ---
 
-## Expected Solution and Problem Addressed
+# Expected Solution and Problem Addressed
 
-Mahoraga is built to solve the challenges in modern forensic system analysis, where standard tools are blocked by behavioral heuristics, signature matching, and kernel-level monitoring of Endpoint Detection and Response (EDR) and Antivirus solutions.
+Modern digital forensic investigations often depend on platform-specific collection tools, manually assembled commands, and tightly coupled execution logic. This makes investigations difficult to reproduce across operating systems and increases the complexity of maintaining consistent evidence-collection workflows.
 
-To detect adversaries without triggering security solutions, Jocky targets the following key paradigms:
+Mahoraga addresses this by introducing a **compiler-driven forensic execution model**.
 
-1. **Independent Programming Language**: Jocky is a custom language and framework utilizing a language-independent intermediate representation (like MLIR/LLVM frontend) that alters basic control-flow graphs, token generation, and binary structures, rendering signature-based detection ineffective.
-2. **Polymorphism in Generated Scripts/Functions**: Mahoraga uses a continuous delivery pipeline instead of manual binary packing. Every iteration passes through integrated obfuscators, variable-encryption routines, and polymorphic engines. This ensures that every deployment instance possesses unique hashes, modified entry points, and altered import tables, neutralizing traditional file-reputation databases.
-3. **Living-off-the-Land & BYOVD Execution**: Scripts and functions avoid standard, noisy API calls for core operations like persistence, privilege escalation, and network routing (SOCKS5). It instead relies on:
-   - **In-Memory Execution**: Utilizing multiple distinct file-less techniques (e.g., process hollowing, reflective DLL injection, API unhooking, direct system calls, or thread execution hijacking) to run secondary scripts entirely within the memory space of trusted processes.
-   - **Kernel-Level Subversion**: Detection of legitimate or vulnerable third-party drivers (BYOVD) to disable EDR callbacks or manipulate kernel structures directly, blinding security agents running in user or kernel space.
+Jocky allows investigators to describe **what evidence should be collected** without directly encoding the operating-system-specific implementation required to obtain it.
+
+The compiler and runtime architecture separates investigation intent from platform-specific execution. The same Jocky investigation can therefore be compiled into a common Forensic IR and executed through the appropriate native provider for the target operating system.
+
+This provides several advantages:
+
+- **Platform independence** — the same investigation intent can be represented across Linux and Windows.
+- **Explicit validation** — unsupported capabilities can be identified before execution.
+- **Separation of concerns** — investigation logic remains separate from platform-specific collection mechanisms.
+- **Reproducible investigations** — forensic procedures can be represented as version-controlled Jocky programs.
+- **Native execution** — platform providers can use operating-system-specific mechanisms without exposing those implementation details to investigators.
+- **Evidence integrity** — collected artifacts are hashed and sealed as part of the execution pipeline.
+- **Standardized output** — investigation results can be transformed into STIX 2.1 for downstream analysis and threat-intelligence workflows.
+
+The result is a unified workflow connecting **forensic intent, compilation, native execution, evidence integrity, and standardized threat-intelligence output**.
 
 ---
 
