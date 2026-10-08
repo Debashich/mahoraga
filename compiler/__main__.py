@@ -1,4 +1,6 @@
 import argparse
+import argparse
+import argparse
 import sys
 from pathlib import Path
 from .parser import parse_source
@@ -7,6 +9,7 @@ from .lower import lower_to_ir
 from .types import ValidationError
 from .lowering.passes import apply_passes
 from .lowering.lower import lower_to_json
+from .visualizer.graph import generate_ir_graph
 
 def print_ir(module):
     print(f"MODULE {module.name}\n")
@@ -27,6 +30,7 @@ def main():
     parser.add_argument("command", choices=["compile"])
     parser.add_argument("file", help="Path to .jocky source")
     parser.add_argument("--emit-ir", action="store_true", help="Print the generated IR")
+    parser.add_argument("--graph",action="store_true",help="Generate a PNG visualization of the optimized Forensic IR",)
     parser.add_argument("--out", help="Output JSON path", default="out/instructions/payload.json")
     args = parser.parse_args()
 
@@ -51,6 +55,11 @@ def main():
                 lower_to_json(optimized_ir, out_path)
                 print(f"Lowered instruction contract written to {out_path}")
 
+            if args.graph:
+                graph_path = Path(".dev/graphs") / f"{Path(args.file).stem}.png"
+                generate_ir_graph(optimized_ir, graph_path)
+                print(f"Forensic IR graph written to {graph_path}")
+                
         except ValidationError as e:
             print(f"Validation Error: {e}")
             sys.exit(1)
