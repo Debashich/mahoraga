@@ -30,3 +30,27 @@ temp.jocky
 node_modules/
 frontend/node_modules
 docs/
+
+# Build output
+build/
+
+# Local development / analysis
+.dev/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# LLVM / Graphviz generated artifacts
+*.ll
+*.bc
+*.dot
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

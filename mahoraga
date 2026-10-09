@@ -90,9 +90,24 @@ STIX_OUT="out/evidence/${BASE_NAME}_stix.json"
 
 echo "[1/4] Compiling $SRC to IR/Instructions..."
 
+GRAPH_ARGS=()
+RESULTS_GRAPH=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --graph)
+            GRAPH_ARGS+=(--graph)
+            ;;
+        --results)
+            RESULTS_GRAPH=true
+            ;;
+    esac
+done
+
 $PYTHON -m compiler compile \
     "$SRC" \
-    --out "$INSTRUCTION_OUT"
+    --out "$INSTRUCTION_OUT" \
+    "${GRAPH_ARGS[@]}"
 
 echo "      -> Plain IR: $INSTRUCTION_OUT"
 
@@ -123,6 +138,53 @@ $PYTHON -m detection.engine \
     "$INSTRUCTION_OUT" \
     "$SEALED_EVIDENCE" \
     "$STIX_OUT"
+
+
+    # DEMO NOTE:
+    # For brute_force_hunt, use synthetic failed-login events to reliably
+    # demonstrate a positive detection during presentations.
+    # The normal pipeline above still collects and seals real host evidence.
+    # The same detection engine also evaluates real evidence; findings depend
+    # on the events present and the configured rule threshold.
+
+if [[ "$RESULTS_GRAPH" == true ]]; then
+    echo "[5/5] Generating investigation results graph..."
+
+    if [[ "$BASE_NAME" == "brute_force_hunt" ]]; then
+        DEMO_RAW="/tmp/mahoraga-demo-evidence.json"
+        DEMO_SEALED="/tmp/mahoraga-demo-sealed.json"
+        DEMO_STIX="/tmp/mahoraga-demo-stix.json"
+
+        echo "      -> Using simulated SSH brute-force scenario (5 failed logins)"
+
+        "$PYTHON" - <<'PY'
+import json
+from pathlib import Path
+
+logs = [
+    {
+        "raw": f"sshd: Failed password for testuser from 192.0.2.{i} port 2222 ssh2",
+        "source": "/tmp/synthetic-auth.log",
+    }
+    for i in range(1, 6)
+]
+
+Path("/tmp/mahoraga-demo-evidence.json").write_text(json.dumps([
+    {"canonical_type": "evidence_auth_logs", "data": {"logs": logs}}
+], indent=2))
+PY
+
+        "$PYTHON" -m evidence.sealing "$DEMO_RAW" "$DEMO_SEALED"
+        "$PYTHON" -m detection.engine "$INSTRUCTION_OUT" "$DEMO_SEALED" "$DEMO_STIX"
+        "$PYTHON" -m compiler.visualizer.results \
+            "$DEMO_SEALED" "$DEMO_STIX" \
+            ".dev/graphs/${BASE_NAME}_results.png"
+    else
+        "$PYTHON" -m compiler.visualizer.results \
+            "$SEALED_EVIDENCE" "$STIX_OUT" \
+            ".dev/graphs/${BASE_NAME}_results.png"
+    fi
+fi
 
 
 echo

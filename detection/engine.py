@@ -50,7 +50,7 @@ def run_detection(ir_path, evidence_path, output_stix_path):
             
             # Scan evidence properly through the logs array
             for artifact in artifacts:
-                if artifact.get("type") == "auth_logs":
+                if artifact.get("canonical_type") == "evidence_auth_logs" or artifact.get("type") == "auth_logs":
                     logs = artifact.get("data", {}).get("logs", [])
                     for entry in logs:
                         raw = entry.get("raw", "").lower()
