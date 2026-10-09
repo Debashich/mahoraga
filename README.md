@@ -1,207 +1,154 @@
 <div align="center">
   <img src="assets/moharaga.png" alt="Mahoraga Logo" width="200" />
 </div>
-
 # Mahoraga
-
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 
 **Compiler-driven digital forensics with a cross-platform execution model.**
 
-Mahoraga is a forensic investigation and orchestration framework built around **Jocky**, a custom domain-specific language (DSL) for expressing forensic intent.
+Mahoraga is a digital forensics framework built around **Jocky**, a domain-specific language (DSL) for expressing forensic investigation workflows.
 
-[Documentation is available at jocky.devloper.xyz](https://jocky.devloper.xyz/)
+Jocky source is parsed, validated, and lowered into a custom **Forensic Intermediate Representation (IR)**. The compiled instructions are transformed into a runtime payload and executed by Mahoraga's native C++ runtime. Collected evidence can then be cryptographically sealed and processed by the detection engine to generate investigation results and STIX-oriented JSON output.
 
-Jocky investigations are parsed, semantically validated, lowered into a platform-independent **Forensic IR**, and executed through native providers for **Linux and Windows**. Collected evidence is cryptographically sealed and can be transformed into standardized **STIX 2.1** threat-intelligence output.
+Mahoraga brings together a forensic DSL, compiler pipeline, native execution runtime, evidence integrity mechanisms, and an interactive forensic Workbench.
 
-The project combines a custom investigation language, compiler pipeline, native execution runtime, evidence integrity layer, and browser-based forensic Workbench into a single workflow.
+- **Jocky DSL:** Express investigation intent through structured programs.
+- **Compiler pipeline:** Parse, validate, and lower investigations into a custom Forensic IR.
+- **Native runtime:** Dispatch compiled collection instructions to the runtime.
+- **Evidence integrity:** Generate SHA-256 integrity hashes and sealed evidence artifacts.
+- **Detection and output:** Evaluate supported detection rules and generate structured results.
+- **Forensic Workbench:** Configure, compile, and execute investigations through a browser-based interface.
 
----
+[Documentation](https://jocky.devloper.xyz/)
 
-## Demo Video
+## Demo
 
-https://github.com/user-attachments/assets/56a9aa97-fb87-4603-be3b-88f70d457c89
+[Watch the Mahoraga demonstration](https://github.com/user-attachments/assets/56a9aa97-fb87-4603-be3b-88f70d457c89)
 
----
-
-## Core Workflow
-
-```text
-                    JOCKY DSL
-                       │
-                       ▼
-              Lexer / Parser / AST
-                       │
-                       ▼
-          Semantic & Capability Validation
-                       │
-                       ▼
-                  Forensic IR
-                       │
-                       ▼
-             Payload Encapsulation
-                       │
-                       ▼
-              Native C++ Runtime
-                       │
-              ┌────────┴────────┐
-              ▼                 ▼
-        Linux Provider    Windows Provider
-              │                 │
-              └────────┬────────┘
-                       ▼
-                  Raw Evidence
-                       │
-                       ▼
-             Cryptographic Sealing
-                       │
-                       ▼
-                   STIX 2.1
-```
-
-### Investigation lifecycle
+## Architecture
 
 ```text
-Write Jocky
-    ↓
-Pre-Flight
-    ↓
-Compile
-    ↓
-Execute
-    ↓
-Evidence
-    ↓
-Detection / STIX
+Jocky Source
+     |
+     v
+Lexer / Parser / AST
+     |
+     v
+Semantic Validation
+     |
+     v
+Custom Forensic IR
+     |
+     v
+Runtime Payload Generation
+     |
+     v
+Native C++ Runtime
+     |
+     v
+Collection and Dispatch
+     |
+     v
+Raw Evidence
+     |
+     v
+Evidence Sealing
+     |
+     v
+Detection Engine
+     |
+     v
+Structured Results / STIX Output
 ```
+
+The Forensic IR is Mahoraga's own intermediate representation. Platform-specific collection depends on the capabilities implemented by the relevant native provider.
 
 ---
 
 ## Why Jocky?
 
-Traditional forensic collection often couples investigation logic directly to the implementation details of a particular operating system or collection tool.
+Forensic investigations often rely on operating-system-specific commands and collection tools. This can make investigation procedures harder to maintain, reproduce, and adapt across environments.
 
-Jocky separates **investigation intent** from **platform-specific execution**.
+Jocky separates **investigation intent from execution details**. Investigators describe the evidence they want to collect, while Mahoraga's compiler and runtime handle validation, instruction generation, and execution.
 
 For example:
 
 ```jocky
-investigate endpoint {
+investigation "Endpoint Triage" {
     collect system_info as sys
     collect process_list as procs
-    collect network_connections as conns
 }
 ```
 
-The investigation describes **what evidence is required**.
+This describes the requested collection workflow without embedding the implementation details of each collection operation in the investigation itself.
 
-The native provider determines **how that evidence is collected on the target platform**.
+### Design principles
 
-This allows the same investigation model to be reused where the requested capabilities are supported on both operating systems.
+- **Declarative investigation intent:** Describe collection requirements in Jocky.
+- **Compiler-driven execution:** Translate validated programs into a custom Forensic IR.
+- **Explicit capability validation:** Check requested capabilities against the compiler's supported contract.
+- **Evidence integrity:** Generate cryptographic hashes and sealed evidence artifacts.
+- **Structured output:** Produce machine-readable investigation results for downstream analysis.
+- **Reproducibility:** Keep investigation programs version-controlled and reviewable.
 
----
-
-# Expected Solution and Problem Addressed
-
-Modern digital forensic investigations often depend on platform-specific collection tools, manually assembled commands, and tightly coupled execution logic. This makes investigations difficult to reproduce across operating systems and increases the complexity of maintaining consistent evidence-collection workflows.
-
-Mahoraga addresses this by introducing a **compiler-driven forensic execution model**.
-
-Jocky allows investigators to describe **what evidence should be collected** without directly encoding the operating-system-specific implementation required to obtain it.
-
-The compiler and runtime architecture separates investigation intent from platform-specific execution. The same Jocky investigation can therefore be compiled into a common Forensic IR and executed through the appropriate native provider for the target operating system.
-
-This provides several advantages:
-
-- **Platform independence** — the same investigation intent can be represented across Linux and Windows.
-- **Explicit validation** — unsupported capabilities can be identified before execution.
-- **Separation of concerns** — investigation logic remains separate from platform-specific collection mechanisms.
-- **Reproducible investigations** — forensic procedures can be represented as version-controlled Jocky programs.
-- **Native execution** — platform providers can use operating-system-specific mechanisms without exposing those implementation details to investigators.
-- **Evidence integrity** — collected artifacts are hashed and sealed as part of the execution pipeline.
-- **Standardized output** — investigation results can be transformed into STIX 2.1 for downstream analysis and threat-intelligence workflows.
-
-The result is a unified workflow connecting **forensic intent, compilation, native execution, evidence integrity, and standardized threat-intelligence output**.
-
----
+Cross-platform reuse depends on the capabilities implemented for the target operating system. It does not imply that every investigation can execute unchanged on every platform.
 
 # Features
 
-### Jocky DSL
+## Features
 
-- Custom forensic investigation language
-- Structured investigation blocks
-- Collection capabilities
-- Semantic and capability validation
-- Platform-independent investigation intent
+### Jocky Language and Compiler
+- Custom domain-specific language for forensic investigations.
+- Lexer, parser, and Abstract Syntax Tree (AST).
+- Semantic and capability validation.
+- Lowering into a custom Forensic IR.
+- Compiled instruction contract for runtime execution.
 
-### Compiler Pipeline
-
-- Lexer and parser
-- Abstract Syntax Tree (AST)
-- Semantic validation
-- Capability resolution
-- Forensic IR generation
-- Native execution contract
-
-### Native Execution
-
-- C++ execution runtime
-- Linux native provider
-- Windows native provider
-- Platform-specific collection implementations
-- Native dispatch from the compiled instruction contract
+### Native Runtime
+- C++ runtime for executing compiled instructions.
+- Runtime dispatch for supported collection operations.
+- Platform-specific provider architecture.
 
 ### Evidence Integrity
+- Structured evidence artifacts.
+- SHA-256 integrity hashing.
+- Evidence sealing and integrity metadata.
+- Machine-readable evidence output.
 
-- Structured evidence collection
-- Canonicalized evidence artifacts
-- SHA-256 integrity hashing
-- Cryptographic evidence sealing
-- Evidence manifests
-
-### Threat Intelligence
-
-- Investigation result processing
-- Behavioral detection rules
-- STIX 2.1 JSON output
-- MITRE ATT&CK-oriented detection workflows where applicable
+### Detection and Investigation Results
+- Rule-driven analysis of supported evidence types.
+- Authentication-log analysis and SSH brute-force detection example.
+- Structured investigation summaries.
+- STIX-oriented JSON bundle generation.
 
 ### Forensic Workbench
-
-- Live Jocky editor
-- Capability insertion controls
-- Pre-flight validation
-- Compilation workflow
-- Native execution
-- Pipeline telemetry
-- Evidence inspection
-- STIX output inspection
+- Browser-based Jocky editor.
+- Capability insertion controls.
+- Pre-flight validation and compilation workflow.
+- Investigation execution and pipeline telemetry.
+- Evidence and output inspection.
 
 ---
 
 # Platform Support
 
-Mahoraga supports both **Linux and Windows** through separate native providers.
+Mahoraga uses separate native providers for Linux and Windows. Jocky provides a shared investigation language, while capability availability depends on the target operating system and the implemented provider.
 
-The Jocky language is shared across platforms, but **not every capability is necessarily available on every platform**.
-
-| Capability | Linux | Windows |
+| Capability / Interface | Linux | Windows |
 |---|:---:|:---:|
-| `system_info` | ✓ | ✓ |
-| `process_list` | ✓ | ✓ |
-| `network_connections` | ✓ | ✓ |
-| `users` | ✓ | ✓ |
-| `auth_logs` | ✓ | Platform-specific |
-| Linux `/proc` interfaces | ✓ | N/A |
-| Linux Netlink interfaces | ✓ | N/A |
-| Windows native APIs | N/A | ✓ |
+| `system_info` | Supported* | Supported* |
+| `process_list` | Supported* | Supported* |
+| `network_connections` | Supported* | Supported* |
+| `users` | Supported* | Supported* |
+| `auth_logs` | Supported* | Platform-specific |
+| Linux `/proc` interfaces | Supported | N/A |
+| Linux Netlink interfaces | Supported | N/A |
+| Windows native APIs | N/A | Supported |
 
-Platform-specific capabilities should only be requested against a compatible target.
+\* Confirm availability against the current native provider implementation before treating these capabilities as fully supported.
 
-The compiler/runtime architecture intentionally keeps platform-specific collection behind native providers rather than exposing operating-system implementation details directly in Jocky.
+Platform-specific capabilities must only be requested against compatible targets. Capability validation should reject unsupported operations before execution.
+
+The shared investigation model separates forensic intent from operating-system-specific collection mechanisms, allowing investigations to be reused across platforms where their required capabilities are implemented.
 
 ---
 
@@ -381,29 +328,27 @@ The frontend communicates with the CMI backend through the configured API/proxy 
 
 # Native Runtime
 
-Mahoraga uses a native C++ runtime for forensic capability execution.
+Mahoraga uses a native C++ runtime to execute compiled forensic investigations through platform-specific providers.
 
 ## Linux
 
+From the repository root:
+
 ```bash
-mkdir -p build
-cd build
-cmake ..
-make -j$(nproc)
-cd ..
+cmake -S . -B build
+cmake --build build -j"$(nproc)"
 ```
 
 ## Windows
 
+From the repository root, using a configured Visual Studio C++ toolchain:
+
 ```powershell
-mkdir build
-cd build
-cmake ..
-cmake --build . --config Release
-cd ..
+cmake -S . -B build
+cmake --build build --config Release
 ```
 
-The generated runtime is used by the Mahoraga execution pipeline.
+The generated runtime binary is consumed by the Mahoraga execution pipeline. Its exact path and filename depend on the CMake target configuration.
 
 ---
 
@@ -504,119 +449,80 @@ investigate endpoint {
 ```
 
 ---
+## CLI Usage
 
-# CLI Usage
+Run commands from the repository root on a compatible environment with the Python dependencies installed and the native runtime built.
 
-Mahoraga can execute an investigation directly through the command-line pipeline.
-
-## Linux
+### Execute an investigation
 
 ```bash
-source .venv/bin/activate
 ./mahoraga library/triage_host_baseline.jocky
 ```
 
-## Windows
+### Generate the Forensic IR graph
 
-```powershell
-.venv\Scripts\activate
-.\mahoraga library\triage_host_baseline.jocky
+```bash
+./mahoraga library/brute_force_hunt.jocky --graph
 ```
 
-The exact set of capabilities available to an investigation depends on the target platform and the capabilities implemented by its native provider.
+### Generate the investigation-results graph
 
----
-
-# Execution Pipeline
-
-A successful investigation follows this general pipeline:
-
-```text
-Jocky Source
-     │
-     ▼
-Compiler
-     │
-     ▼
-Forensic IR
-     │
-     ▼
-Payload Generation
-     │
-     ▼
-Native Runtime
-     │
-     ▼
-Native Provider
-     │
-     ▼
-Raw Evidence
-     │
-     ▼
-Evidence Sealing
-     │
-     ▼
-STIX 2.1
+```bash
+./mahoraga library/brute_force_hunt.jocky --results
 ```
 
-The CMI exposes execution telemetry for the major runtime stages.
+### Generate both visualizations
 
----
-
-# Generated Artifacts
-
-Investigation artifacts are written under `out/`.
-
-```text
-out/
-├── instructions/
-│   ├── <inv_id>.json
-│   └── <inv_id>.enc
-│
-└── evidence/
-    ├── raw_evidence.json
-    ├── <inv_id>_sealed.json
-    └── <inv_id>_stix.json
+```bash
+./mahoraga library/brute_force_hunt.jocky --graph --results
 ```
 
-### Artifacts
+The wrapper runs the compilation, payload transformation, native execution, evidence sealing, and detection stages. The `--graph` and `--results` options request additional visualizations.
 
-| Artifact | Purpose |
+### Generated artifacts
+
+The pipeline writes generated files under `out/`:
+
+| Path | Purpose |
 |---|---|
-| `<inv_id>.json` | Compiled Forensic IR / instruction contract |
-| `<inv_id>.enc` | Runtime payload |
-| `raw_evidence.json` | Native provider output |
-| `<inv_id>_sealed.json` | Sealed evidence artifact |
-| `<inv_id>_stix.json` | STIX 2.1 output |
+| `out/instructions/<name>.json` | Compiled instruction contract |
+| `out/instructions/<name>.enc` | Transformed runtime payload |
+| `out/evidence/raw_evidence.json` | Raw runtime evidence |
+| `out/evidence/<name>_sealed.json` | Sealed evidence output |
+| `out/evidence/<name>_stix.json` | Detection and STIX-oriented output |
 
-Generated files under `out/` are not intended to be committed to the repository.
+The precise contents depend on the investigation and runtime execution. Generated files should remain untracked unless there is a specific reason to version an artifact.
 
 ---
 
 # Evidence Integrity
 
-Evidence is treated as a first-class output of the investigation pipeline.
+Evidence integrity is a core part of the Mahoraga investigation pipeline.
+
+The workflow processes collected evidence, computes integrity hashes, and produces sealed evidence artifacts for subsequent inspection.
 
 ```text
 Native Provider
-      │
-      ▼
+      |
+      v
 Raw Evidence
-      │
-      ▼
+      |
+      v
 Canonicalization
-      │
-      ▼
+      |
+      v
 SHA-256 Integrity Hash
-      │
-      ▼
-Sealed Evidence
-      │
-      ▼
-STIX 2.1
+      |
+      v
+Sealed Evidence Artifact
+      |
+      v
+STIX 2.1 Output
 ```
 
-The sealing stage produces integrity information that can be used to detect subsequent modification of the generated evidence artifact.
+SHA-256 hashes can be used to detect changes to evidence when compared against a trusted, previously recorded hash. Hashing alone does not establish the identity of the collector or prevent tampering with both the evidence and its recorded hash.
+
+The integrity guarantees of the generated artifacts depend on the implemented canonicalization, hashing, sealing, and verification mechanisms.
 
 ---
 
@@ -696,28 +602,64 @@ npm run dev
 ```
 
 ---
-## Jocky Standard Library
+# Jocky Investigation Library
 
-Mahoraga ships with a set of ready-to-run Jocky investigation scripts covering common endpoint, process, network, and suspicious-activity investigation workflows.
+Mahoraga includes ready-to-use Jocky investigation scripts covering endpoint triage, persistence, process and network activity, lateral movement, and suspicious behavior.
 
-| **Library File** | **Investigation Focus** |
+| Library File | Investigation Focus |
 |---|---|
-| `library/endpoint_triage.jocky` | Endpoint-level triage and host discovery |
-| `library/host_and_network_investigation.jocky` | Host and network investigation |
-| `library/process_network_correlation.jocky` | Process and network activity correlation |
-| `library/suspicious_host_activity.jocky` | Investigation of suspicious endpoint activity |
+| `library/brute_force_hunt.jocky` | Brute-force investigation |
+| `library/deep_persistence_hunt.jocky` | Persistence investigation |
+| `library/edr_blinding_hunt.jocky` | Investigation of potential EDR interference |
+| `library/exfiltration_monitor.jocky` | Potential data-exfiltration activity |
+| `library/lateral_movement_trace.jocky` | Lateral-movement investigation |
+| `library/stealth_host_sweep.jocky` | Host discovery and suspicious activity |
+| `library/triage_host_baseline.jocky` | Baseline endpoint triage |
 
-These scripts can be executed directly through the Mahoraga CLI or loaded into the Jocky Forensic Workbench for inspection and modification.
+A minimal investigation:
+
+```jocky
+investigate endpoint {
+    collect system_info as sys
+}
+```
+
+A multi-capability investigation:
+
+```jocky
+investigate endpoint {
+    collect system_info as sys
+    collect process_list as procs
+    collect users as local_users
+    collect network_connections as conns
+}
+```
+
+Run an example from the repository root:
+
+```bash
+./mahoraga library/triage_host_baseline.jocky
+```
+
+On Windows, use the corresponding executable path and Windows-compatible command syntax.
+
+The available investigations and their execution results depend on the capabilities implemented by the selected native provider.
 
 ### Example
 
 ```bash
-./mahoraga library/endpoint_triage.jocky
+./mahoraga library/brute_force_hunt.jocky
 ```
 
-Or load the script into the Workbench to inspect the Jocky investigation, run pre-flight validation, compile it, and execute it against the selected target platform.
+To generate the compiler graph and investigation-results visualization:
 
-The library is intended to provide practical starting points for investigations while demonstrating how multiple forensic capabilities can be composed through Jocky.
+```bash
+./mahoraga library/brute_force_hunt.jocky --graph --results
+```
+
+**Demo note:** When `--results` is used with `brute_force_hunt.jocky`, the current demo workflow uses a simulated SSH brute-force scenario to demonstrate a positive detection. The regular pipeline still collects and seals host evidence; the positive demonstration result is generated from the separate simulated scenario.
+
+A zero-finding result on real evidence is valid when the configured detection rule does not match the collected events.
 
 ---
 # Design Principles
