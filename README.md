@@ -23,7 +23,7 @@ Mahoraga brings together a forensic DSL, compiler pipeline, native execution run
 
 ## Demo
 
-https://github.com/user-attachments/assets/c1e47d21-bb5b-4b9e-9759-46ff64fc363f
+https://github.com/user-attachments/assets/3ddf32c8-4070-49f2-b721-c7a00514eee9
 
 ## Architecture
 
