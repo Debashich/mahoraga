@@ -1,6 +1,7 @@
 <div align="center">
   <img src="assets/moharaga.png" alt="Mahoraga Logo" width="200" />
 </div>
+
 # Mahoraga
 
 **Compiler-driven digital forensics with a cross-platform execution model.**
